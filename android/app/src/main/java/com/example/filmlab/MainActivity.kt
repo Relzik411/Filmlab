@@ -183,7 +183,7 @@ private fun Preview(model: EditorViewModel, pickPhoto: () -> Unit) {
 private fun Controls(model: EditorViewModel) {
     var tab by remember { mutableStateOf(0) }
     var adjustment by remember { mutableStateOf(Adjustment.Exposure) }
-    LaunchedEffect(tab) { model.setCropping(tab == 3) }
+    LaunchedEffect(tab) { model.showCropBox(tab == 3) }
 
     Column(
         Modifier

@@ -97,7 +97,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         requests.value = RenderRequest(photoVersion, edit, cropping = !isCropping)
     }
 
-    fun setCropping(cropping: Boolean) {
+    fun showCropBox(cropping: Boolean) {
         if (cropping == isCropping) return
         isCropping = cropping
         requestRender()
