@@ -14,7 +14,8 @@ Get the latest build from [Releases](../../releases).
   ($99/year) and TestFlight.
 
 Every push to `main` builds both apps in GitHub Actions (download them from the run's artifacts).
-Pushing a tag such as `v0.2.0` also publishes a release.
+To publish a release, open Actions → Build → **Run workflow** and enter a version such as `0.2.0`,
+or push a tag such as `v0.2.0`.
 
 ## Features
 

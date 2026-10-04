@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a release with this version, e.g. 0.1.0 (leave empty to only build)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -22,9 +27,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Set version
+        env:
+          RELEASE: ${{ inputs.release }}
         run: |
           echo "VERSION_CODE=${{ github.run_number }}" >> "$GITHUB_ENV"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [[ -n "$RELEASE" ]]; then
+            echo "VERSION_NAME=$RELEASE" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
           fi
 
@@ -61,9 +70,12 @@ jobs:
       - run: xcodegen generate
 
       - name: Build
+        env:
+          RELEASE: ${{ inputs.release }}
         run: |
           VERSION=0.1.0
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          if [[ -n "$RELEASE" ]]; then VERSION="$RELEASE"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="${GITHUB_REF_NAME#v}"; fi
           xcodebuild build \
             -project FilmLab.xcodeproj \
             -scheme FilmLab \
@@ -89,7 +101,7 @@ jobs:
           path: FilmLab-unsigned.ipa
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
     needs: [android, ios]
     runs-on: ubuntu-latest
     steps:
@@ -100,13 +112,21 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
         run: |
+          TAG="$GITHUB_REF_NAME"
+          if [[ -n "$RELEASE" ]]; then TAG="v${RELEASE#v}"; fi
           cat > notes.md <<'NOTES'
           **Android:** download `FilmLab.apk` on your phone, open it, and allow installing from your browser when asked. Needs Android 10 or later.
 
           **iPhone:** `FilmLab-unsigned.ipa` must be signed before it installs. Use [AltStore](https://altstore.io) or [Sideloadly](https://sideloadly.io) with your Apple ID. With a free Apple ID the app has to be refreshed every 7 days. Needs iOS 17 or later.
           NOTES
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "FilmLab $GITHUB_REF_NAME" \
-            --notes-file notes.md
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "FilmLab $TAG" \
+              --notes-file notes.md
+          fi
