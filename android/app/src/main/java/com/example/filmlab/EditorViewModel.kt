@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Date
 
 class EditorViewModel(application: Application) : AndroidViewModel(application) {
     private data class RenderRequest(val photo: Int, val edit: EditState, val cropping: Boolean)
@@ -68,7 +69,11 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var photoVersion = 0
     private var previewSource: Bitmap? = null
     private var thumbnailSource: Bitmap? = null
-    private var comparisonCrop: CropState? = null
+    /** The crop and frame the "hold to compare" image was last rendered with. */
+    private var comparisonShape: EditState? = null
+    /** What the date stamp prints: when the photo was taken, or today if the photo doesn't say. */
+    var dateText by mutableStateOf(Frames.stampText(Date()))
+        private set
     private var history = History(EditState())
     /** Fingerprint of the open photo, under which its edits are saved. */
     private var photoKey: String? = null
@@ -88,16 +93,22 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 val source = previewSource ?: return@collectLatest
                 val edit = request.edit
                 val lut = lutFor(edit.lutId)
+                val dateText = dateText
                 preview = withContext(Dispatchers.Default) {
-                    Processor.apply(edit, lut, Geometry.apply(source, edit.crop, request.cropping))
+                    val processed = Processor.apply(edit, lut, Geometry.apply(source, edit.crop, request.cropping))
+                    // The frame is left off while the crop box is being edited.
+                    if (request.cropping) Frames.apply(processed, edit, dateText) else processed
                 }.asImageBitmap()
 
-                // "Hold to compare" shows the original with the same crop.
-                if (request.cropping && edit.crop != comparisonCrop) {
+                // "Hold to compare" shows the original with the same crop and frame.
+                val shape = EditState(
+                    crop = edit.crop, frame = edit.frame, frameColor = edit.frameColor, dateStamp = edit.dateStamp,
+                )
+                if (request.cropping && shape != comparisonShape) {
                     original = withContext(Dispatchers.Default) {
-                        Geometry.apply(source, edit.crop, cropping = true)
+                        Frames.apply(Geometry.apply(source, shape.crop, cropping = true), shape, dateText)
                     }.asImageBitmap()
-                    comparisonCrop = edit.crop
+                    comparisonShape = shape
                 }
             }
         }
@@ -253,6 +264,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                     val key = EditStore.key(context, uri)
                     key to key?.let { EditStore.load(context, it) }
                 }
+                val taken = withContext(Dispatchers.IO) { PhotoIO.captureDate(context, uri) }
                 if (previewBitmap == null || thumbBitmap == null) {
                     message = "Couldn't open that photo."
                     return@launch
@@ -265,7 +277,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 previewSize = previewBitmap.width to previewBitmap.height
                 thumbnailSource = thumbBitmap
                 original = previewBitmap.asImageBitmap()
-                comparisonCrop = CropState()
+                comparisonShape = EditState()
+                dateText = Frames.stampText(taken ?: Date())
                 preview = original
                 originalThumbnail = thumbBitmap.asImageBitmap()
                 thumbnails = emptyMap()
@@ -286,6 +299,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun export() {
         val uri = photoUri ?: return
         val edit = edit
+        val dateText = dateText
         viewModelScope.launch {
             isExporting = true
             try {
@@ -293,7 +307,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(Dispatchers.IO) {
                     val full = PhotoIO.decode(context, uri, 6000) ?: error("Couldn't open the photo.")
                     val shaped = Geometry.apply(full, edit.crop, cropping = true)
-                    PhotoIO.save(context, Processor.apply(edit, lutFor(edit.lutId), shaped))
+                    val processed = Processor.apply(edit, lutFor(edit.lutId), shaped)
+                    PhotoIO.save(context, Frames.apply(processed, edit, dateText))
                 }
                 message = "Saved to Pictures/FilmLab"
             } catch (e: Exception) {

@@ -43,6 +43,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -232,12 +233,13 @@ private fun Controls(model: EditorViewModel) {
             0 -> LooksPanel(model)
             1 -> AdjustPanel(model, adjustment) { adjustment = it }
             2 -> EffectsPanel(model)
-            else -> CropPanel(model)
+            3 -> CropPanel(model)
+            else -> FramePanel(model)
         }
         Spacer(Modifier.height(12.dp))
         TabRow(selectedTabIndex = tab, containerColor = panelColor) {
-            listOf("Looks", "Adjust", "Effects", "Crop").forEachIndexed { index, title ->
-                Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title, maxLines = 1) })
+            listOf("Looks", "Adjust", "Effects", "Crop", "Frame").forEachIndexed { index, title ->
+                Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title, maxLines = 1, fontSize = 13.sp) })
             }
         }
     }
@@ -514,6 +516,53 @@ private fun EffectsPanel(model: EditorViewModel) {
                     if (edit.leak != style.id) model.update(edit.copy(leak = style.id, leakAmount = 0.8f))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FramePanel(model: EditorViewModel) {
+    val edit = model.edit
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            items(FrameStyle.entries) { style ->
+                ToolChip(style.title, edit.frame == style, changed = false) { model.update(edit.copy(frame = style)) }
+            }
+        }
+        Row(
+            Modifier.padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FrameColor.entries.forEach { color ->
+                val selected = edit.frameColor == color
+                val enabled = edit.frame.hasColor
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable(enabled = enabled) { model.update(edit.copy(frameColor = color)) },
+                ) {
+                    Box(
+                        Modifier
+                            .size(24.dp)
+                            .border(2.dp, if (selected && enabled) Color.White else Color.Transparent, CircleShape)
+                            .padding(3.dp)
+                            .background(Color(color.argb), CircleShape)
+                            .border(1.dp, Color.Gray, CircleShape),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(color.title, fontSize = 12.sp, color = if (enabled) Color.White else Color.DarkGray)
+                }
+            }
+        }
+        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Date stamp", fontSize = 12.sp, color = Color.Gray)
+            Spacer(Modifier.width(8.dp))
+            Text(model.dateText, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF9E40))
+            Spacer(Modifier.weight(1f))
+            Switch(checked = edit.dateStamp, onCheckedChange = { model.update(edit.copy(dateStamp = it)) })
         }
     }
 }

@@ -31,6 +31,11 @@ or push a tag such as `v0.2.0`.
 - **Effects**: five light leaks (Amber, Rose, Sunset, Haze, Prism) with an amount slider. **Shift** moves the
   leak to another corner. The leaks are drawn by code from soft coloured glows, so there are no image files
   to license.
+- **Frame**: Instant (deep bottom border), Thin, Gallery, Square (fits the photo on a square) and Film (a 35mm
+  strip with sprocket holes and edge printing), in white, cream or black; plus an orange **date stamp**
+  showing when the photo was taken (from its EXIF data, or today). Frames are added after every other
+  effect and sized from the photo, so the preview matches the export. They're hidden while cropping.
+  `docs/frames.jpg` shows a mock-up.
 - **Crop**: drag the box's corners or move it; ratios Free, Original, 1:1, 4:5, 9:16 and 16:9; straighten
   ±20° (the photo is scaled up so no empty corners show); rotate 90° and flip.
 - Press and hold the photo to compare with the original.
@@ -84,6 +89,7 @@ first. Create a key once with `keytool -genkeypair -keystore filmlab.keystore -a
 | `Crop.swift` | Crop state, crop-box arithmetic, and the rotate/flip/straighten/crop geometry. |
 | `CropOverlay.swift` | The draggable crop box. |
 | `LightLeak.swift` | Light leak styles and how they are drawn. |
+| `Frame.swift` | Frame styles, their layout, and drawing the film strip and date stamp. |
 | `History.swift` | Undo and redo. |
 | `ToneColor.swift` | Builds the highlights/shadows/HSL LUT; the HSL bands. |
 | `EditStore.swift` | Saves each photo's edits as JSON in Application Support. |
@@ -102,12 +108,13 @@ In `android/app/src/main/java/com/example/filmlab/`:
 | `MainActivity.kt` | The editor screen, including the crop box. |
 | `Crop.kt` | Crop state, crop-box arithmetic, and the rotate/flip/straighten/crop geometry. |
 | `LightLeak.kt` | Light leak styles (drawn in `Processor.kt`). |
+| `Frame.kt` | Frame styles, their layout, and drawing the film strip and date stamp. |
 | `History.kt` | Undo and redo. |
 | `ToneColor.kt` | Builds the highlights/shadows/HSL LUT; the HSL bands. |
 | `EditStore.kt` | Saves each photo's edits as JSON in the app's files. |
 | `PresetStore.kt` | Saves your presets as JSON in the app's files. |
 
-Crop arithmetic, the light leak styles and the tone/HSL maths are written twice, once per platform; keep them
+Crop arithmetic, the light leak styles, the tone/HSL maths and the frame layouts are written twice, once per platform; keep them
 in step.
 
 ## Looks

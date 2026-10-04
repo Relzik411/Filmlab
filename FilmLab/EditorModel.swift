@@ -1,4 +1,5 @@
 import CoreImage
+import ImageIO
 import Observation
 import Photos
 import PhotosUI
@@ -24,6 +25,8 @@ final class EditorModel {
     var message: String?
 
     var hasPhoto: Bool { fullImage != nil }
+    /// What the date stamp prints: when the photo was taken, or today if the photo doesn't say.
+    private(set) var dateText = Frames.stampText(for: .now)
 
     private(set) var history = History(EditState())
     var canUndo: Bool { hasPhoto && history.canUndo(from: edit) }
@@ -48,7 +51,8 @@ final class EditorModel {
     /// Observed copy of the preview size, so `cropFrameSize` updates views.
     private var previewSourceSize = CGSize.zero
     @ObservationIgnored private var lastRender: (edit: EditState, cropping: Bool, source: CIImage)?
-    @ObservationIgnored private var comparisonCrop: CropState?
+    /// The crop and frame the "hold to compare" image was last rendered with.
+    @ObservationIgnored private var comparisonShape: EditState?
     /// Fingerprint of the open photo, under which its edits are saved.
     @ObservationIgnored private var photoKey: String?
     @ObservationIgnored private var recordTask: Task<Void, Never>?
@@ -83,6 +87,7 @@ final class EditorModel {
 
             commit() // the previous photo's last change
             photoKey = key
+            dateText = Frames.stampText(for: Self.captureDate(of: image) ?? .now)
             let saved = EditStore.load(key: key)
 
             fullImage = image
@@ -95,12 +100,21 @@ final class EditorModel {
             edit = saved ?? EditState()
             history.record(edit)
             lastRender = nil
-            comparisonCrop = CropState()
+            comparisonShape = EditState()
             render()
             makeThumbnails()
         } catch {
             message = error.localizedDescription
         }
+    }
+
+    private static func captureDate(of image: CIImage) -> Date? {
+        let exif = image.properties[kCGImagePropertyExifDictionary as String] as? [String: Any]
+        guard let text = exif?[kCGImagePropertyExifDateTimeOriginal as String] as? String else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        return f.date(from: text)
     }
 
     func lut(for id: String?) -> LUT? {
@@ -123,25 +137,31 @@ final class EditorModel {
         if let last = lastRender, last.edit == edit, last.cropping == cropping, last.source === source { return }
         lastRender = (edit, cropping, source)
 
-        // "Hold to compare" shows the original with the same crop.
-        let comparisonCrop = cropping && edit.crop != self.comparisonCrop ? edit.crop : nil
+        // "Hold to compare" shows the original with the same crop and frame.
+        var shape = EditState()
+        shape.crop = edit.crop
+        shape.frame = edit.frame
+        shape.frameColor = edit.frameColor
+        shape.dateStamp = edit.dateStamp
+        let comparisonShape = cropping && shape != self.comparisonShape ? shape : nil
 
         isRendering = true
         let lut = lut(for: edit.lutID)
         let renderer = renderer
+        let dateText = dateText
         Task {
             let (image, comparison) = await Task.detached(priority: .userInitiated) { () -> (CGImage?, CGImage?) in
-                let image = renderer.cgImage(FilterPipeline.apply(edit, lut: lut, to: source, cropping: cropping))
-                let comparison = comparisonCrop.map {
-                    renderer.cgImage(Geometry.apply($0, to: source, cropping: true))
+                let image = renderer.cgImage(FilterPipeline.apply(edit, lut: lut, to: source, cropping: cropping, dateText: dateText))
+                let comparison = comparisonShape.map {
+                    renderer.cgImage(FilterPipeline.apply($0, lut: nil, to: source, dateText: dateText))
                 } ?? nil
                 return (image, comparison)
             }.value
             if source === previewSource {
                 previewImage = image
-                if let comparisonCrop, let comparison {
+                if let comparisonShape, let comparison {
                     originalPreview = comparison
-                    self.comparisonCrop = comparisonCrop
+                    self.comparisonShape = comparisonShape
                 }
             }
             isRendering = false
@@ -297,11 +317,12 @@ final class EditorModel {
         }
 
         let edit = edit
+        let dateText = dateText
         let lut = lut(for: edit.lutID)
         let renderer = renderer
         do {
             let data = try await Task.detached(priority: .userInitiated) {
-                try renderer.encoded(FilterPipeline.apply(edit, lut: lut, to: full))
+                try renderer.encoded(FilterPipeline.apply(edit, lut: lut, to: full, dateText: dateText))
             }.value
             try await PHPhotoLibrary.shared().performChanges {
                 PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)

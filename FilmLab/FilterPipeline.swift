@@ -4,8 +4,9 @@ import CoreImage.CIFilterBuiltins
 /// Builds the Core Image recipe for an edit. Nothing is rendered here; `Renderer` does that on the GPU.
 /// Every effect is sized relative to the image, so the small preview matches the full-size export.
 enum FilterPipeline {
-    /// `cropping: false` shows the whole straightened photo, for editing the crop box.
-    static func apply(_ edit: EditState, lut: LUT?, to input: CIImage, cropping: Bool = true) -> CIImage {
+    /// `cropping: false` shows the whole straightened photo, without its frame, for editing the crop box.
+    /// `dateText` is printed when the edit has a date stamp.
+    static func apply(_ edit: EditState, lut: LUT?, to input: CIImage, cropping: Bool = true, dateText: String? = nil) -> CIImage {
         var image = Geometry.apply(edit.crop, to: input, cropping: cropping)
         let extent = image.extent
 
@@ -87,7 +88,8 @@ enum FilterPipeline {
             image = addGrain(to: image, amount: CGFloat(edit.grain), extent: extent)
         }
 
-        return image.cropped(to: extent)
+        image = image.cropped(to: extent)
+        return cropping ? Frames.apply(edit, dateText: dateText, to: image) : image
     }
 
     private static func applyCube(_ lut: LUT, to image: CIImage) -> CIImage? {

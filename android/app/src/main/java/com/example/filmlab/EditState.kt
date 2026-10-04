@@ -25,6 +25,9 @@ data class EditState(
     /** Which corner the leak comes from; see [LightLeak.placed]. */
     val leakPlacement: Int = 0,
     val crop: CropState = CropState(),
+    val frame: FrameStyle = FrameStyle.None,
+    val frameColor: FrameColor = FrameColor.White,
+    val dateStamp: Boolean = false,
 ) {
     val hasHsl get() = hslHue != HslBand.zeros || hslSaturation != HslBand.zeros || hslLuminance != HslBand.zeros
 

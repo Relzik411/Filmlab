@@ -25,6 +25,9 @@ struct EditState: Equatable, Sendable, Codable {
     /// Which corner the leak comes from; see `LightLeak.placed(_:)`.
     var leakPlacement = 0
     var crop = CropState()
+    var frame = FrameStyle.none
+    var frameColor = FrameColor.white
+    var dateStamp = false
 
     /// The same edit with the Adjust tab's sliders, including HSL, back at zero.
     func withoutAdjustments() -> EditState {
@@ -71,6 +74,9 @@ extension EditState {
         leakAmount = try value(.leakAmount, leakAmount)
         leakPlacement = try value(.leakPlacement, leakPlacement)
         crop = try value(.crop, crop)
+        frame = try value(.frame, frame)
+        frameColor = try value(.frameColor, frameColor)
+        dateStamp = try value(.dateStamp, dateStamp)
         if hslHue.count != HSLBand.allCases.count { hslHue = HSLBand.zeros }
         if hslSaturation.count != HSLBand.allCases.count { hslSaturation = HSLBand.zeros }
         if hslLuminance.count != HSLBand.allCases.count { hslLuminance = HSLBand.zeros }

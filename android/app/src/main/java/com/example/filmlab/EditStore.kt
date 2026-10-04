@@ -58,6 +58,9 @@ object EditStore {
         put("leak", e.leak ?: JSONObject.NULL)
         put("leakAmount", e.leakAmount.toDouble())
         put("leakPlacement", e.leakPlacement)
+        put("frame", e.frame.name)
+        put("frameColor", e.frameColor.name)
+        put("dateStamp", e.dateStamp)
         put("crop", JSONObject().apply {
             put("quarterTurns", e.crop.quarterTurns)
             put("flipped", e.crop.flipped)
@@ -83,6 +86,9 @@ object EditStore {
             leak = if (j.isNull("leak")) null else j.getInt("leak"),
             leakAmount = j.optDouble("leakAmount", 0.8).toFloat(),
             leakPlacement = j.optInt("leakPlacement", 0),
+            frame = runCatching { FrameStyle.valueOf(j.getString("frame")) }.getOrDefault(FrameStyle.None),
+            frameColor = runCatching { FrameColor.valueOf(j.getString("frameColor")) }.getOrDefault(FrameColor.White),
+            dateStamp = j.optBoolean("dateStamp", false),
         )
         Adjustment.entries.forEach { edit = it.set(edit, j.optDouble(it.name, 0.0).toFloat()) }
         edit = edit.copy(

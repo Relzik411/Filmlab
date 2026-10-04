@@ -7,6 +7,7 @@ struct EditorView: View {
         case adjust = "Adjust"
         case effects = "Effects"
         case crop = "Crop"
+        case frame = "Frame"
     }
 
     @State private var model = EditorModel()
@@ -152,6 +153,7 @@ struct EditorView: View {
             case .adjust: adjustPanel
             case .effects: effectsPanel
             case .crop: cropPanel
+            case .frame: framePanel
             }
             Picker("Tool", selection: $tool) {
                 ForEach(Tool.allCases, id: \.self) { Text($0.rawValue) }
@@ -440,6 +442,61 @@ struct EditorView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal)
+    }
+
+    private var framePanel: some View {
+        VStack(spacing: 14) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(FrameStyle.allCases) { style in
+                        chip(style.title, selected: model.edit.frame == style) { model.edit.frame = style }
+                    }
+                }
+                .padding(.horizontal)
+            }
+            HStack(spacing: 14) {
+                ForEach(FrameColor.allCases) { color in
+                    let rgb = color.rgb
+                    let selected = model.edit.frameColor == color
+                    Button { model.edit.frameColor = color } label: {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color(red: rgb.0, green: rgb.1, blue: rgb.2))
+                                .frame(width: 18, height: 18)
+                                .overlay { Circle().stroke(Color(white: 0.5), lineWidth: 1) }
+                                .padding(2)
+                                .overlay { Circle().stroke(Color.white, lineWidth: selected ? 2 : 0) }
+                            Text(color.title).font(.caption)
+                        }
+                        .foregroundStyle(selected ? Color.primary : Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+            .padding(.horizontal)
+            .opacity(model.edit.frame.hasColor ? 1 : 0.3)
+            .disabled(!model.edit.frame.hasColor)
+            Toggle(isOn: $model.edit.dateStamp) {
+                HStack {
+                    Text("Date stamp").font(.caption)
+                    Text(model.dateText)
+                        .font(.caption.monospacedDigit().bold())
+                        .foregroundStyle(Color(red: 1, green: 0.62, blue: 0.25))
+                }
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .font(.caption)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(selected ? Color(white: 0.25) : .clear, in: Capsule())
+            .foregroundStyle(selected ? Color.primary : Color.secondary)
+            .buttonStyle(.plain)
     }
 
     private func adjustmentButton(_ item: Adjustment) -> some View {

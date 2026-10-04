@@ -10,6 +10,9 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.exifinterface.media.ExifInterface
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -53,6 +56,14 @@ object PhotoIO {
         if (matrix.isIdentity) return decoded
         return Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
     }
+
+    /** When the photo was taken, from its EXIF data, if recorded. */
+    fun captureDate(context: Context, uri: Uri): Date? = runCatching {
+        val text = context.contentResolver.openInputStream(uri)?.use {
+            ExifInterface(it).getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+        } ?: return null
+        SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US).parse(text)
+    }.getOrNull()
 
     /** Saves a JPEG to Pictures/FilmLab. Needs no permission on Android 10 and later. */
     fun save(context: Context, bitmap: Bitmap) {
