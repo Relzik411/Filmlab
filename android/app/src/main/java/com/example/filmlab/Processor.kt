@@ -7,7 +7,7 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.floor
-import kotlin.math.hypot
+import kotlin.math.sqrt
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -20,12 +20,29 @@ object Processor {
     private val toLinear = FloatArray(256) { srgbToLinear(it / 255f) }
     private const val STEPS = 4096
     private val toSrgb = FloatArray(STEPS + 1) { linearToSrgb(it / STEPS.toFloat()) }
+    private val fromSrgb = FloatArray(STEPS + 1) { srgbToLinear(it / STEPS.toFloat()) }
+
+    /** A light leak's glows in pixels, with linear-light colours scaled by strength and amount. */
+    private class Leak(edit: EditState, w: Int, h: Int) {
+        val glows = LightLeak.styles[edit.leak!!].placed(edit.leakPlacement)
+        val n = glows.size
+        val side = max(w, h).toFloat()
+        val cx = FloatArray(n) { glows[it].x * w }
+        val cy = FloatArray(n) { glows[it].y * h }
+        val radius = FloatArray(n) { glows[it].radius * side }
+        val red = FloatArray(n) { Processor.srgbToLinear(glows[it].red * glows[it].strength * edit.leakAmount) }
+        val green = FloatArray(n) { Processor.srgbToLinear(glows[it].green * glows[it].strength * edit.leakAmount) }
+        val blue = FloatArray(n) { Processor.srgbToLinear(glows[it].blue * glows[it].strength * edit.leakAmount) }
+    }
 
     suspend fun apply(edit: EditState, lut: Lut?, source: Bitmap): Bitmap = withContext(Dispatchers.Default) {
         val w = source.width
         val h = source.height
         val pixels = IntArray(w * h)
         source.getPixels(pixels, 0, w, 0, 0, w, h)
+
+        val leak = edit.leak?.takeIf { it in LightLeak.styles.indices && edit.leakAmount > 0f }
+            ?.let { Leak(edit, w, h) }
 
         val parts = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
         val rowsPerPart = (h + parts - 1) / parts
@@ -35,7 +52,7 @@ object Processor {
                 val end = min(h, (part + 1) * rowsPerPart)
                 for (y in part * rowsPerPart until end) {
                     ensureActive()
-                    processRow(pixels, y, w, h, edit, lut, scratch)
+                    processRow(pixels, y, w, h, edit, lut, leak, scratch)
                 }
             }
         }
@@ -43,7 +60,9 @@ object Processor {
         Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { it.setPixels(pixels, 0, w, 0, 0, w, h) }
     }
 
-    private fun processRow(pixels: IntArray, y: Int, w: Int, h: Int, edit: EditState, lut: Lut?, scratch: FloatArray) {
+    private fun processRow(
+        pixels: IntArray, y: Int, w: Int, h: Int, edit: EditState, lut: Lut?, leak: Leak?, scratch: FloatArray,
+    ) {
         val gain = 2f.pow(edit.exposure)
         val warm = edit.warmth * 0.12f
         val contrast = 1f + edit.contrast * 0.5f
@@ -53,7 +72,7 @@ object Processor {
         val grainCell = max(1f, max(w, h) / 1500f)
         val cx = w / 2f
         val cy = h / 2f
-        val maxDistance = hypot(cx, cy)
+        val maxDistance = sqrt(cx * cx + cy * cy)
 
         var i = y * w
         for (x in 0 until w) {
@@ -86,19 +105,38 @@ object Processor {
                 b += (scratch[2] - b) * edit.intensity
             }
 
-            // 3. Finishing: lifted blacks, vignette, grain.
+            // 3. Finishing: lifted blacks, vignette, light leak, grain.
             if (fade > 0f) {
                 r = r * (1f - fade) + fade
                 g = g * (1f - fade) + fade
                 b = b * (1f - fade) + fade
             }
             if (edit.vignette > 0f) {
-                val d = hypot(x - cx, y - cy) / maxDistance
+                val d = sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)) / maxDistance
                 val t = ((d - 0.35f) / 0.65f).coerceIn(0f, 1f)
                 val k = 1f - edit.vignette * 0.8f * t * t * (3f - 2f * t)
                 r *= k
                 g *= k
                 b *= k
+            }
+            if (leak != null) {
+                // Screen the glows together, then over the photo, in linear light as Core Image does.
+                var lr = 0f
+                var lg = 0f
+                var lb = 0f
+                for (k in 0 until leak.n) {
+                    val dx = x - leak.cx[k]
+                    val dy = y - leak.cy[k]
+                    val d = sqrt(dx * dx + dy * dy)
+                    if (d >= leak.radius[k]) continue
+                    val t = 1f - d / leak.radius[k]
+                    lr = 1f - (1f - lr) * (1f - leak.red[k] * t)
+                    lg = 1f - (1f - lg) * (1f - leak.green[k] * t)
+                    lb = 1f - (1f - lb) * (1f - leak.blue[k] * t)
+                }
+                r = encode(1f - (1f - decode(r)) * (1f - lr))
+                g = encode(1f - (1f - decode(g)) * (1f - lg))
+                b = encode(1f - (1f - decode(b)) * (1f - lb))
             }
             if (grain > 0f) {
                 val grey = 0.5f + (valueNoise(x / grainCell, y / grainCell) - 0.5f) * grain
@@ -167,6 +205,8 @@ object Processor {
         if (base < 0.5f) 2f * base * blend else 1f - 2f * (1f - base) * (1f - blend)
 
     private fun encode(linear: Float) = toSrgb[(linear.coerceIn(0f, 1f) * STEPS).toInt()]
+
+    private fun decode(srgb: Float) = fromSrgb[(srgb.coerceIn(0f, 1f) * STEPS).toInt()]
 
     private fun to8(v: Float) = (v.coerceIn(0f, 1f) * 255f + 0.5f).toInt()
 

@@ -9,13 +9,16 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -45,16 +48,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -133,6 +141,9 @@ private fun Preview(model: EditorViewModel, pickPhoto: () -> Unit) {
     var showingOriginal by remember { mutableStateOf(false) }
     val image = if (showingOriginal) model.original else model.preview
     when {
+        image != null && model.isCropping -> CropEditor(image, model.edit.crop.rect, model.cropRatio) { rect ->
+            model.update(model.edit.copy(crop = model.edit.crop.copy(rect = rect)))
+        }
         image != null -> Box(contentAlignment = Alignment.TopCenter) {
             Image(
                 bitmap = image,
@@ -172,6 +183,7 @@ private fun Preview(model: EditorViewModel, pickPhoto: () -> Unit) {
 private fun Controls(model: EditorViewModel) {
     var tab by remember { mutableStateOf(0) }
     var adjustment by remember { mutableStateOf(Adjustment.Exposure) }
+    LaunchedEffect(tab) { model.setCropping(tab == 3) }
 
     Column(
         Modifier
@@ -181,11 +193,17 @@ private fun Controls(model: EditorViewModel) {
             .padding(vertical = 12.dp),
         verticalArrangement = Arrangement.Bottom,
     ) {
-        if (tab == 0) LooksPanel(model) else AdjustPanel(model, adjustment) { adjustment = it }
+        when (tab) {
+            0 -> LooksPanel(model)
+            1 -> AdjustPanel(model, adjustment) { adjustment = it }
+            2 -> EffectsPanel(model)
+            else -> CropPanel(model)
+        }
         Spacer(Modifier.height(12.dp))
         TabRow(selectedTabIndex = tab, containerColor = panelColor) {
-            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Looks") })
-            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Adjust") })
+            listOf("Looks", "Adjust", "Effects", "Crop").forEachIndexed { index, title ->
+                Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title, maxLines = 1) })
+            }
         }
     }
 }
@@ -273,17 +291,172 @@ private fun AdjustPanel(model: EditorViewModel, adjustment: Adjustment, onSelect
 }
 
 @Composable
+private fun EffectsPanel(model: EditorViewModel) {
+    val edit = model.edit
+    Column {
+        if (edit.leak != null) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                LabeledSlider("Light Leak", edit.leakAmount, 0f..1f, Modifier.weight(1f)) {
+                    model.update(edit.copy(leakAmount = it))
+                }
+                TextButton(
+                    onClick = { model.update(edit.copy(leakPlacement = (edit.leakPlacement + 1) % LightLeak.PLACEMENT_COUNT)) },
+                    modifier = Modifier.padding(end = 8.dp),
+                ) { Text("Shift") }
+            }
+        }
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                LookTile("None", model.originalThumbnail, edit.leak == null) {
+                    model.update(edit.copy(leak = null))
+                }
+            }
+            items(LightLeak.styles, key = { it.id }) { style ->
+                LookTile(style.name, model.leakThumbnails[style.id], edit.leak == style.id) {
+                    if (edit.leak != style.id) model.update(edit.copy(leak = style.id, leakAmount = 0.8f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CropPanel(model: EditorViewModel) {
+    val crop = model.edit.crop
+    Column {
+        Row(verticalAlignment = Alignment.Bottom) {
+            LabeledSlider(
+                "Straighten", crop.straighten, -20f..20f, Modifier.weight(1f),
+                format = { "%.1f°".format(it) },
+            ) { model.update(model.edit.copy(crop = crop.copy(straighten = it))) }
+            TextButton(onClick = model::rotateClockwise) { Text("Rotate") }
+            TextButton(onClick = model::flip, modifier = Modifier.padding(end = 8.dp)) { Text("Flip") }
+        }
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            items(CropAspect.entries) { aspect ->
+                val selected = crop.aspect == aspect
+                Text(
+                    aspect.title,
+                    fontSize = 13.sp,
+                    color = if (selected) Color.White else Color.Gray,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(if (selected) Color(0xFF3A3A3A) else Color.Transparent)
+                        .clickable { model.setAspect(aspect) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
+            item {
+                TextButton(onClick = model::resetCrop, enabled = crop != CropState()) { Text("Reset") }
+            }
+        }
+    }
+}
+
+/** The whole straightened photo with a crop box that can be moved and resized. */
+@Composable
+private fun CropEditor(image: ImageBitmap, rect: NRect, ratio: Float?, onChange: (NRect) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
+        val aspect = image.width.toFloat() / image.height
+        val boxWidth = if (maxWidth / maxHeight > aspect) maxHeight * aspect else maxWidth
+        Box(Modifier.size(boxWidth, boxWidth / aspect)) {
+            Image(image, contentDescription = "Photo", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
+            CropBox(rect, ratio, onChange)
+        }
+    }
+}
+
+@Composable
+private fun CropBox(rect: NRect, ratio: Float?, onChange: (NRect) -> Unit) {
+    val currentRect by rememberUpdatedState(rect)
+    val currentRatio by rememberUpdatedState(ratio)
+    val currentOnChange by rememberUpdatedState(onChange)
+    val handleReach = with(LocalDensity.current) { 32.dp.toPx() }
+
+    Canvas(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                var start = NRect.Full
+                var target = -1 // corner 0-3, 4 to move the box, -1 for nothing
+                var total = Offset.Zero
+                detectDragGestures(
+                    onDragStart = { position ->
+                        start = currentRect
+                        total = Offset.Zero
+                        val w = size.width.toFloat()
+                        val h = size.height.toFloat()
+                        val corners = listOf(
+                            Offset(start.left * w, start.top * h),
+                            Offset(start.right * w, start.top * h),
+                            Offset(start.right * w, start.bottom * h),
+                            Offset(start.left * w, start.bottom * h),
+                        )
+                        target = corners.indexOfFirst { (it - position).getDistance() <= handleReach }
+                        val inside = position.x in start.left * w..start.right * w &&
+                            position.y in start.top * h..start.bottom * h
+                        if (target < 0 && inside) target = 4
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        total += amount
+                        val dx = total.x / size.width
+                        val dy = total.y / size.height
+                        when (target) {
+                            in 0..3 -> currentOnChange(CropMath.dragCorner(target, start, dx, dy, currentRatio))
+                            4 -> currentOnChange(CropMath.move(start, dx, dy))
+                        }
+                    },
+                )
+            }
+    ) {
+        val w = size.width
+        val h = size.height
+        val l = rect.left * w
+        val t = rect.top * h
+        val r = rect.right * w
+        val b = rect.bottom * h
+        val dim = Color.Black.copy(alpha = 0.6f)
+        drawRect(dim, Offset.Zero, Size(w, t))
+        drawRect(dim, Offset(0f, b), Size(w, h - b))
+        drawRect(dim, Offset(0f, t), Size(l, b - t))
+        drawRect(dim, Offset(r, t), Size(w - r, b - t))
+
+        val grid = Color.White.copy(alpha = 0.35f)
+        for (i in 1..2) {
+            val x = l + (r - l) * i / 3
+            val y = t + (b - t) * i / 3
+            drawLine(grid, Offset(x, t), Offset(x, b), strokeWidth = 1f)
+            drawLine(grid, Offset(l, y), Offset(r, y), strokeWidth = 1f)
+        }
+        drawRect(Color.White, Offset(l, t), Size(r - l, b - t), style = Stroke(width = 1.5.dp.toPx()))
+        for (corner in listOf(Offset(l, t), Offset(r, t), Offset(r, b), Offset(l, b))) {
+            drawCircle(Color.White, radius = 7.dp.toPx(), center = corner)
+        }
+    }
+}
+
+@Composable
 private fun LabeledSlider(
     title: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+    format: (Float) -> String = { "${(it * 100).roundToInt()}" },
     onChange: (Float) -> Unit,
 ) {
-    Column(Modifier.padding(horizontal = 16.dp)) {
+    Column(modifier.padding(horizontal = 16.dp)) {
         Row {
             Text(title, fontSize = 12.sp, color = Color.Gray)
             Spacer(Modifier.weight(1f))
-            Text("${(value * 100).roundToInt()}", fontSize = 12.sp, color = Color.Gray)
+            Text(format(value), fontSize = 12.sp, color = Color.Gray)
         }
         Slider(value = value, onValueChange = onChange, valueRange = range)
     }

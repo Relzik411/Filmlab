@@ -11,6 +11,21 @@ struct EditState: Equatable, Sendable {
     var fade: Double = 0
     var vignette: Double = 0
     var grain: Double = 0
+    /// Index into `LightLeak.styles`, or nil for none.
+    var leak: Int?
+    var leakAmount: Double = 0.8
+    /// Which corner the leak comes from; see `LightLeak.placed(_:)`.
+    var leakPlacement = 0
+    var crop = CropState()
+
+    /// The same edit with the Adjust tab's sliders back at zero.
+    func withoutAdjustments() -> EditState {
+        var copy = self
+        for adjustment in Adjustment.allCases {
+            copy[keyPath: adjustment.keyPath] = 0
+        }
+        return copy
+    }
 }
 
 enum Adjustment: String, CaseIterable, Identifiable {

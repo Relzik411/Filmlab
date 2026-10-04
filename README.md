@@ -21,6 +21,11 @@ or push a tag such as `v0.2.0`.
 
 - Pick a photo, then tap a **look** (a 3D LUT) and set its strength.
 - **Adjust**: exposure, contrast, saturation, warmth, fade, vignette, grain.
+- **Effects**: five light leaks (Amber, Rose, Sunset, Haze, Prism) with an amount slider. **Shift** moves the
+  leak to another corner. The leaks are drawn by code from soft coloured glows, so there are no image files
+  to license.
+- **Crop**: drag the box's corners or move it; ratios Free, Original, 1:1, 4:5, 9:16 and 16:9; straighten
+  ±20° (the photo is scaled up so no empty corners show); rotate 90° and flip.
 - Press and hold the photo to compare with the original.
 - **Save** writes a full-resolution copy: HEIC to Photos on iPhone, JPEG to Pictures/FilmLab on Android.
 
@@ -64,6 +69,9 @@ first. Create a key once with `keytool -genkeypair -keystore filmlab.keystore -a
 | `EditorModel.swift` | Photo loading, merged preview renders, thumbnails, saving to Photos. |
 | `EditorView.swift` | The editor screen. |
 | `CreditsView.swift` | Attribution the LUT licence requires. |
+| `Crop.swift` | Crop state, crop-box arithmetic, and the rotate/flip/straighten/crop geometry. |
+| `CropOverlay.swift` | The draggable crop box. |
+| `LightLeak.swift` | Light leak styles and how they are drawn. |
 
 ## Android code
 
@@ -75,7 +83,11 @@ In `android/app/src/main/java/com/example/filmlab/`:
 | `Processor.kt` | Applies an edit on the CPU across all cores, mirroring the iOS pipeline. |
 | `PhotoIO.kt` | Decodes photos upright in sRGB; saves JPEGs to Pictures/FilmLab. |
 | `EditorViewModel.kt` | Loading, cancellable preview renders, thumbnails, saving. |
-| `MainActivity.kt` | The editor screen. |
+| `MainActivity.kt` | The editor screen, including the crop box. |
+| `Crop.kt` | Crop state, crop-box arithmetic, and the rotate/flip/straighten/crop geometry. |
+| `LightLeak.kt` | Light leak styles (drawn in `Processor.kt`). |
+
+Crop arithmetic and the light leak styles are written twice, once per platform; keep them in step.
 
 ## Looks
 

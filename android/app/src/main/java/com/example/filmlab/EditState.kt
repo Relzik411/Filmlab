@@ -11,8 +11,15 @@ data class EditState(
     val fade: Float = 0f,
     val vignette: Float = 0f,
     val grain: Float = 0f,
+    /** Index into [LightLeak.styles], or null for none. */
+    val leak: Int? = null,
+    val leakAmount: Float = 0.8f,
+    /** Which corner the leak comes from; see [LightLeak.placed]. */
+    val leakPlacement: Int = 0,
+    val crop: CropState = CropState(),
 ) {
-    fun withoutAdjustments() = EditState(lutId = lutId, intensity = intensity)
+    /** The same edit with the Adjust tab's sliders back at zero. */
+    fun withoutAdjustments() = Adjustment.entries.fold(this) { edit, adjustment -> adjustment.set(edit, 0f) }
 }
 
 enum class Adjustment(

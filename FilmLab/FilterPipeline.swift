@@ -4,9 +4,10 @@ import CoreImage.CIFilterBuiltins
 /// Builds the Core Image recipe for an edit. Nothing is rendered here; `Renderer` does that on the GPU.
 /// Every effect is sized relative to the image, so the small preview matches the full-size export.
 enum FilterPipeline {
-    static func apply(_ edit: EditState, lut: LUT?, to input: CIImage) -> CIImage {
-        let extent = input.extent
-        var image = input
+    /// `cropping: false` shows the whole straightened photo, for editing the crop box.
+    static func apply(_ edit: EditState, lut: LUT?, to input: CIImage, cropping: Bool = true) -> CIImage {
+        var image = Geometry.apply(edit.crop, to: input, cropping: cropping)
+        let extent = image.extent
 
         // 1. Basic corrections, before the look, like correcting exposure before printing.
         if edit.exposure != 0 {
@@ -53,7 +54,7 @@ enum FilterPipeline {
             }
         }
 
-        // 3. Finishing: lifted blacks, vignette, grain.
+        // 3. Finishing: lifted blacks, vignette, light leak, grain.
         if edit.fade > 0 {
             let k = CGFloat(edit.fade) * 0.06 // working space is linear, so a small lift goes a long way
             let f = CIFilter.colorMatrix()
@@ -70,6 +71,9 @@ enum FilterPipeline {
             f.intensity = Float(edit.vignette) * 1.5
             f.radius = 1.5
             image = f.outputImage ?? image
+        }
+        if let index = edit.leak, LightLeak.styles.indices.contains(index), edit.leakAmount > 0 {
+            image = LightLeak.styles[index].apply(to: image, amount: edit.leakAmount, placement: edit.leakPlacement)
         }
         if edit.grain > 0 {
             image = addGrain(to: image, amount: CGFloat(edit.grain), extent: extent)

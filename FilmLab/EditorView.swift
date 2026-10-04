@@ -5,6 +5,8 @@ struct EditorView: View {
     private enum Tool: String, CaseIterable {
         case looks = "Looks"
         case adjust = "Adjust"
+        case effects = "Effects"
+        case crop = "Crop"
     }
 
     @State private var model = EditorModel()
@@ -57,6 +59,7 @@ struct EditorView: View {
             Task { await model.load(item) }
         }
         .onChange(of: model.edit) { model.render() }
+        .onChange(of: tool) { model.setCropping(tool == .crop) }
         .alert(model.message ?? "", isPresented: Binding(
             get: { model.message != nil },
             set: { if !$0 { model.message = nil } }
@@ -71,24 +74,17 @@ struct EditorView: View {
     @ViewBuilder
     private var preview: some View {
         if let image = showingOriginal ? model.originalPreview : model.previewImage {
-            Image(decorative: image, scale: 1)
-                .resizable()
-                .scaledToFit()
-                .padding()
-                .overlay(alignment: .top) {
-                    if showingOriginal {
-                        Text("Original")
-                            .font(.caption.bold())
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .padding(.top, 24)
+            if model.isCropping {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .scaledToFit()
+                    .overlay {
+                        CropOverlay(rect: $model.edit.crop.rect, ratio: model.cropRatio)
                     }
-                }
-                // Press and hold to compare with the original.
-                .onLongPressGesture(minimumDuration: .infinity, maximumDistance: .infinity, perform: {}) { pressing in
-                    showingOriginal = pressing
-                }
+                    .padding(28)
+            } else {
+                comparablePreview(image)
+            }
         } else if model.isLoading {
             ProgressView()
         } else {
@@ -103,6 +99,27 @@ struct EditorView: View {
         }
     }
 
+    private func comparablePreview(_ image: CGImage) -> some View {
+        Image(decorative: image, scale: 1)
+            .resizable()
+            .scaledToFit()
+            .padding()
+            .overlay(alignment: .top) {
+                if showingOriginal {
+                    Text("Original")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.top, 24)
+                }
+            }
+            // Press and hold to compare with the original.
+            .onLongPressGesture(minimumDuration: .infinity, maximumDistance: .infinity, perform: {}) { pressing in
+                showingOriginal = pressing
+            }
+    }
+
     // MARK: Controls
 
     private var controls: some View {
@@ -110,6 +127,8 @@ struct EditorView: View {
             switch tool {
             case .looks: looksPanel
             case .adjust: adjustPanel
+            case .effects: effectsPanel
+            case .crop: cropPanel
             }
             Picker("Tool", selection: $tool) {
                 ForEach(Tool.allCases, id: \.self) { Text($0.rawValue) }
@@ -140,12 +159,15 @@ struct EditorView: View {
     }
 
     private func lookButton(id: String?, name: String, thumbnail: CGImage?) -> some View {
-        let selected = model.edit.lutID == id
-        return Button {
-            guard !selected else { return }
+        tile(name: name, thumbnail: thumbnail, selected: model.edit.lutID == id) {
+            guard model.edit.lutID != id else { return }
             model.edit.lutID = id
             model.edit.intensity = 1
-        } label: {
+        }
+    }
+
+    private func tile(name: String, thumbnail: CGImage?, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             VStack(spacing: 6) {
                 Group {
                     if let thumbnail {
@@ -184,10 +206,85 @@ struct EditorView: View {
                     }
                     Button("Reset") { model.resetAdjustments() }
                         .font(.caption)
-                        .disabled(model.edit == EditState(lutID: model.edit.lutID, intensity: model.edit.intensity))
+                        .disabled(model.edit == model.edit.withoutAdjustments())
                 }
                 .padding(.horizontal)
             }
+        }
+    }
+
+    private var effectsPanel: some View {
+        VStack(spacing: 12) {
+            if model.edit.leak != nil {
+                HStack(alignment: .bottom, spacing: 0) {
+                    LabeledSlider(title: "Light Leak", value: $model.edit.leakAmount, range: 0...1)
+                    Button {
+                        model.edit.leakPlacement = (model.edit.leakPlacement + 1) % LightLeak.placementCount
+                    } label: {
+                        Label("Shift", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption)
+                    }
+                    .padding(.trailing)
+                    .padding(.bottom, 6)
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    tile(name: "None", thumbnail: model.originalThumbnail, selected: model.edit.leak == nil) {
+                        model.edit.leak = nil
+                    }
+                    ForEach(LightLeak.styles) { style in
+                        tile(name: style.name, thumbnail: model.leakThumbnails[style.id], selected: model.edit.leak == style.id) {
+                            if model.edit.leak != style.id {
+                                model.edit.leak = style.id
+                                model.edit.leakAmount = 0.8
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+    }
+
+    private var cropPanel: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .bottom, spacing: 0) {
+                LabeledSlider(
+                    title: "Straighten",
+                    value: $model.edit.crop.straighten,
+                    range: -20...20,
+                    format: { String(format: "%.1f°", $0) }
+                )
+                Button { model.rotateClockwise() } label: {
+                    Image(systemName: "rotate.right").font(.title3)
+                }
+                .padding(.trailing, 12)
+                .padding(.bottom, 4)
+                Button { model.flip() } label: {
+                    Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right").font(.title3)
+                }
+                .padding(.trailing)
+                .padding(.bottom, 4)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(CropAspect.allCases) { aspect in
+                        let selected = model.edit.crop.aspect == aspect
+                        Button(aspect.rawValue) { model.setAspect(aspect) }
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(selected ? Color(white: 0.25) : .clear, in: Capsule())
+                            .foregroundStyle(selected ? Color.primary : Color.secondary)
+                    }
+                    Button("Reset") { model.resetCrop() }
+                        .font(.caption)
+                        .disabled(model.edit.crop == CropState())
+                }
+                .padding(.horizontal)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -215,13 +312,14 @@ struct LabeledSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
+    var format: (Double) -> String = { "\(Int(($0 * 100).rounded()))" }
 
     var body: some View {
         VStack(spacing: 2) {
             HStack {
                 Text(title)
                 Spacer()
-                Text("\(Int((value * 100).rounded()))").monospacedDigit()
+                Text(format(value)).monospacedDigit()
             }
             .font(.caption)
             .foregroundStyle(.secondary)
