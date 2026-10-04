@@ -1,0 +1,12 @@
+The .cube files in this folder are adapted from the RawTherapee Film Simulation Collection
+(version 2015-09-20) by Pat David, Pavlov Dmitry and Michael Ezra:
+https://rawpedia.rawtherapee.com/Film_Simulation
+
+Changes: converted from level-12 Hald CLUT PNGs to 33x33x33 .cube files with trilinear
+resampling (scripts/hald_to_cube.py) and renamed. Each file's header names its source image.
+
+Licence: Creative Commons Attribution-ShareAlike 4.0 International
+https://creativecommons.org/licenses/by-sa/4.0/
+
+These adapted files are shared under the same licence. Film stock names appear only in the
+source notes, to say which stock a look approximates; no affiliation or endorsement is implied.
