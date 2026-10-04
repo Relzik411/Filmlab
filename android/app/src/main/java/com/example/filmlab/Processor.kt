@@ -2,6 +2,7 @@ package com.example.filmlab
 
 import android.graphics.Bitmap
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -11,6 +12,7 @@ import kotlin.math.sqrt
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.roundToInt
 
 /**
  * Applies an edit to a bitmap on the CPU, split across cores. Effects are sized relative to the
@@ -40,7 +42,9 @@ object Processor {
         val h = source.height
         val pixels = IntArray(w * h)
         source.getPixels(pixels, 0, w, 0, 0, w, h)
+        if (edit.sharpen > 0f) sharpen(pixels, w, h, edit.sharpen)
 
+        val tone = ToneColor.lut(edit)
         val leak = edit.leak?.takeIf { it in LightLeak.styles.indices && edit.leakAmount > 0f }
             ?.let { Leak(edit, w, h) }
 
@@ -52,7 +56,7 @@ object Processor {
                 val end = min(h, (part + 1) * rowsPerPart)
                 for (y in part * rowsPerPart until end) {
                     ensureActive()
-                    processRow(pixels, y, w, h, edit, lut, leak, scratch)
+                    processRow(pixels, y, w, h, edit, lut, tone, leak, scratch)
                 }
             }
         }
@@ -61,10 +65,15 @@ object Processor {
     }
 
     private fun processRow(
-        pixels: IntArray, y: Int, w: Int, h: Int, edit: EditState, lut: Lut?, leak: Leak?, scratch: FloatArray,
+        pixels: IntArray, y: Int, w: Int, h: Int, edit: EditState, lut: Lut?, tone: Lut?, leak: Leak?,
+        scratch: FloatArray,
     ) {
         val gain = 2f.pow(edit.exposure)
-        val warm = edit.warmth * 0.12f
+        // Warmth trades red against blue; tint trades green against magenta.
+        val tint = edit.tint
+        val redGain = gain * (1f + edit.warmth * 0.12f) * (1f + tint * 0.05f)
+        val greenGain = gain * (1f - tint * 0.1f)
+        val blueGain = gain * (1f - edit.warmth * 0.12f) * (1f + tint * 0.05f)
         val contrast = 1f + edit.contrast * 0.5f
         val saturation = 1f + edit.saturation
         val fade = edit.fade * 0.2f
@@ -78,10 +87,11 @@ object Processor {
         for (x in 0 until w) {
             val c = pixels[i]
 
-            // 1. Exposure and warmth in linear light, then contrast and saturation on sRGB values.
-            var r = encode(toLinear[(c shr 16) and 0xff] * gain * (1f + warm))
-            var g = encode(toLinear[(c shr 8) and 0xff] * gain)
-            var b = encode(toLinear[c and 0xff] * gain * (1f - warm))
+            // 1. Exposure, warmth and tint in linear light, then contrast and saturation on sRGB values,
+            //    then highlights, shadows and HSL through the tone LUT.
+            var r = encode(toLinear[(c shr 16) and 0xff] * redGain)
+            var g = encode(toLinear[(c shr 8) and 0xff] * greenGain)
+            var b = encode(toLinear[c and 0xff] * blueGain)
             if (contrast != 1f) {
                 r = (r - 0.5f) * contrast + 0.5f
                 g = (g - 0.5f) * contrast + 0.5f
@@ -96,6 +106,12 @@ object Processor {
             r = r.coerceIn(0f, 1f)
             g = g.coerceIn(0f, 1f)
             b = b.coerceIn(0f, 1f)
+            if (tone != null) {
+                sample(tone, r, g, b, scratch)
+                r = scratch[0]
+                g = scratch[1]
+                b = scratch[2]
+            }
 
             // 2. The film look, blended with the original by its strength.
             if (lut != null && edit.intensity > 0f) {
@@ -148,6 +164,47 @@ object Processor {
             pixels[i] = (0xff shl 24) or (to8(r) shl 16) or (to8(g) shl 8) or to8(b)
             i++
         }
+    }
+
+    /**
+     * Unsharp mask on each channel: each pixel is pushed away from the average of its four neighbours.
+     * Neighbours are further apart on bigger images, so the preview matches the export.
+     */
+    private suspend fun sharpen(pixels: IntArray, w: Int, h: Int, amount: Float) = coroutineScope {
+        val source = pixels.copyOf()
+        val step = max(1, (max(w, h) / 1500f).roundToInt())
+        val k = amount * 1.5f
+        val parts = Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
+        val rowsPerPart = (h + parts - 1) / parts
+        (0 until parts).map { part ->
+            launch {
+                for (y in part * rowsPerPart until min(h, (part + 1) * rowsPerPart)) {
+                    ensureActive()
+                    val up = max(0, y - step) * w
+                    val down = min(h - 1, y + step) * w
+                    val row = y * w
+                    for (x in 0 until w) {
+                        val c = source[row + x]
+                        val n1 = source[up + x]
+                        val n2 = source[down + x]
+                        val n3 = source[row + max(0, x - step)]
+                        val n4 = source[row + min(w - 1, x + step)]
+                        pixels[row + x] = (0xff shl 24) or
+                            sharpenChannel(c, n1, n2, n3, n4, 16, k) or
+                            sharpenChannel(c, n1, n2, n3, n4, 8, k) or
+                            sharpenChannel(c, n1, n2, n3, n4, 0, k)
+                    }
+                }
+            }
+        }.joinAll()
+    }
+
+    private fun sharpenChannel(c: Int, n1: Int, n2: Int, n3: Int, n4: Int, shift: Int, k: Float): Int {
+        val v = (c shr shift) and 0xff
+        val sum = ((n1 shr shift) and 0xff) + ((n2 shr shift) and 0xff) +
+            ((n3 shr shift) and 0xff) + ((n4 shr shift) and 0xff)
+        val sharpened = (v + (v - sum / 4f) * k).roundToInt().coerceIn(0, 255)
+        return sharpened shl shift
     }
 
     /** Trilinear lookup. */

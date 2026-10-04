@@ -2,6 +2,7 @@ package com.example.filmlab
 
 import android.content.Context
 import android.net.Uri
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -51,6 +52,9 @@ object EditStore {
         put("lutId", e.lutId ?: JSONObject.NULL)
         put("intensity", e.intensity.toDouble())
         Adjustment.entries.forEach { put(it.name, it.get(e).toDouble()) }
+        put("hslHue", JSONArray(e.hslHue.map { it.toDouble() }))
+        put("hslSaturation", JSONArray(e.hslSaturation.map { it.toDouble() }))
+        put("hslLuminance", JSONArray(e.hslLuminance.map { it.toDouble() }))
         put("leak", e.leak ?: JSONObject.NULL)
         put("leakAmount", e.leakAmount.toDouble())
         put("leakPlacement", e.leakPlacement)
@@ -66,6 +70,12 @@ object EditStore {
         })
     }
 
+    private fun bands(j: JSONObject, name: String): List<Float> {
+        val array = j.optJSONArray(name) ?: return HslBand.zeros
+        if (array.length() != HslBand.entries.size) return HslBand.zeros
+        return List(array.length()) { array.optDouble(it, 0.0).toFloat() }
+    }
+
     internal fun fromJson(j: JSONObject): EditState {
         var edit = EditState(
             lutId = if (j.isNull("lutId")) null else j.getString("lutId"),
@@ -75,6 +85,11 @@ object EditStore {
             leakPlacement = j.optInt("leakPlacement", 0),
         )
         Adjustment.entries.forEach { edit = it.set(edit, j.optDouble(it.name, 0.0).toFloat()) }
+        edit = edit.copy(
+            hslHue = bands(j, "hslHue"),
+            hslSaturation = bands(j, "hslSaturation"),
+            hslLuminance = bands(j, "hslLuminance"),
+        )
         j.optJSONObject("crop")?.let { c ->
             edit = edit.copy(crop = CropState(
                 quarterTurns = c.optInt("quarterTurns", 0),

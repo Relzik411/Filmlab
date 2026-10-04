@@ -13,6 +13,8 @@ struct EditorView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var tool = Tool.looks
     @State private var adjustment = Adjustment.exposure
+    @State private var showingHSL = false
+    @State private var hslBand = HSLBand.red
     @State private var showingOriginal = false
     @State private var showingCredits = false
     @State private var showingSavePreset = false
@@ -157,7 +159,7 @@ struct EditorView: View {
             .padding(.horizontal)
         }
         .padding(.vertical, 14)
-        .frame(height: 230, alignment: .bottom)
+        .frame(height: 280, alignment: .bottom)
         .background(Color(white: 0.07))
     }
 
@@ -265,18 +267,25 @@ struct EditorView: View {
 
     private var adjustPanel: some View {
         VStack(spacing: 12) {
-            LabeledSlider(
-                title: adjustment.title,
-                value: Binding(
-                    get: { model.edit[keyPath: adjustment.keyPath] },
-                    set: { model.edit[keyPath: adjustment.keyPath] = $0 }
-                ),
-                range: adjustment.range
-            )
+            if showingHSL {
+                hslControls
+            } else {
+                LabeledSlider(
+                    title: adjustment.title,
+                    value: Binding(
+                        get: { model.edit[keyPath: adjustment.keyPath] },
+                        set: { model.edit[keyPath: adjustment.keyPath] = $0 }
+                    ),
+                    range: adjustment.range
+                )
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 18) {
                     ForEach(Adjustment.allCases) { item in
                         adjustmentButton(item)
+                    }
+                    toolButton(title: "HSL", symbol: "paintpalette", selected: showingHSL, changed: model.edit.hasHSL) {
+                        showingHSL = true
                     }
                     Button("Reset") { model.resetAdjustments() }
                         .font(.caption)
@@ -362,16 +371,69 @@ struct EditorView: View {
         }
     }
 
+    private var hslControls: some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 12) {
+                ForEach(HSLBand.allCases) { band in
+                    Button { hslBand = band } label: {
+                        Circle()
+                            .fill(Color(hue: band.hue / 360, saturation: 0.75, brightness: 0.95))
+                            .frame(width: 22, height: 22)
+                            .padding(3)
+                            .overlay {
+                                Circle().stroke(Color.white, lineWidth: band == hslBand ? 2 : 0)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(band.title)
+                }
+            }
+            .padding(.bottom, 2)
+            hslSlider("Hue", \.hslHue)
+            hslSlider("Saturation", \.hslSaturation)
+            hslSlider("Luminance", \.hslLuminance)
+        }
+    }
+
+    private func hslSlider(_ title: String, _ keyPath: WritableKeyPath<EditState, [Double]>) -> some View {
+        let index = hslBand.rawValue
+        let value = Binding(
+            get: { model.edit[keyPath: keyPath][index] },
+            set: { model.edit[keyPath: keyPath][index] = $0 }
+        )
+        return HStack(spacing: 8) {
+            Text(title)
+                .frame(width: 72, alignment: .leading)
+            Slider(value: value, in: -1...1)
+            Text("\(Int((value.wrappedValue * 100).rounded()))")
+                .monospacedDigit()
+                .frame(width: 34, alignment: .trailing)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal)
+    }
+
     private func adjustmentButton(_ item: Adjustment) -> some View {
-        let selected = item == adjustment
-        let changed = model.edit[keyPath: item.keyPath] != 0
-        return Button { adjustment = item } label: {
+        toolButton(
+            title: item.title,
+            symbol: item.symbol,
+            selected: !showingHSL && item == adjustment,
+            changed: model.edit[keyPath: item.keyPath] != 0
+        ) {
+            adjustment = item
+            showingHSL = false
+        }
+    }
+
+    private func toolButton(title: String, symbol: String, selected: Bool, changed: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             VStack(spacing: 6) {
-                Image(systemName: item.symbol)
+                Image(systemName: symbol)
                     .font(.title3)
                     .frame(width: 44, height: 44)
                     .background(selected ? Color(white: 0.25) : .clear, in: Circle())
-                Text(item.title).font(.caption2)
+                Text(title).font(.caption2)
                 Circle()
                     .fill(changed ? Color.white : .clear)
                     .frame(width: 4, height: 4)

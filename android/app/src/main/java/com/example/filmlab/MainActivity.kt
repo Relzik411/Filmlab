@@ -70,6 +70,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -216,13 +217,13 @@ private fun Preview(model: EditorViewModel, pickPhoto: () -> Unit) {
 @Composable
 private fun Controls(model: EditorViewModel) {
     var tab by remember { mutableStateOf(0) }
-    var adjustment by remember { mutableStateOf(Adjustment.Exposure) }
+    var adjustment by remember { mutableStateOf<Adjustment?>(Adjustment.Exposure) }
     LaunchedEffect(tab) { model.showCropBox(tab == 3) }
 
     Column(
         Modifier
             .fillMaxWidth()
-            .height(230.dp)
+            .height(290.dp)
             .background(panelColor)
             .padding(vertical = 12.dp),
         verticalArrangement = Arrangement.Bottom,
@@ -380,12 +381,17 @@ private fun LookTile(
     }
 }
 
+/** [adjustment] null means the HSL tool is showing. */
 @Composable
-private fun AdjustPanel(model: EditorViewModel, adjustment: Adjustment, onSelect: (Adjustment) -> Unit) {
+private fun AdjustPanel(model: EditorViewModel, adjustment: Adjustment?, onSelect: (Adjustment?) -> Unit) {
     val edit = model.edit
     Column {
-        LabeledSlider(adjustment.title, adjustment.get(edit), adjustment.range) {
-            model.update(adjustment.set(edit, it))
+        if (adjustment == null) {
+            HslControls(model)
+        } else {
+            LabeledSlider(adjustment.title, adjustment.get(edit), adjustment.range) {
+                model.update(adjustment.set(edit, it))
+            }
         }
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
@@ -393,19 +399,9 @@ private fun AdjustPanel(model: EditorViewModel, adjustment: Adjustment, onSelect
             verticalAlignment = Alignment.CenterVertically,
         ) {
             items(Adjustment.entries) { item ->
-                val selected = item == adjustment
-                val changed = item.get(edit) != 0f
-                Text(
-                    if (changed) "${item.title} •" else item.title,
-                    fontSize = 13.sp,
-                    color = if (selected) Color.White else Color.Gray,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(if (selected) Color(0xFF3A3A3A) else Color.Transparent)
-                        .clickable { onSelect(item) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                )
+                ToolChip(item.title, item == adjustment, item.get(edit) != 0f) { onSelect(item) }
             }
+            item { ToolChip("HSL", adjustment == null, edit.hasHsl) { onSelect(null) } }
             item {
                 TextButton(
                     onClick = { model.update(edit.withoutAdjustments()) },
@@ -413,6 +409,67 @@ private fun AdjustPanel(model: EditorViewModel, adjustment: Adjustment, onSelect
                 ) { Text("Reset") }
             }
         }
+    }
+}
+
+@Composable
+private fun ToolChip(title: String, selected: Boolean, changed: Boolean, onClick: () -> Unit) {
+    Text(
+        if (changed) "$title •" else title,
+        fontSize = 13.sp,
+        color = if (selected) Color.White else Color.Gray,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(if (selected) Color(0xFF3A3A3A) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun HslControls(model: EditorViewModel) {
+    var band by remember { mutableStateOf(HslBand.Red) }
+    val edit = model.edit
+    Column {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+        ) {
+            HslBand.entries.forEach { b ->
+                Box(
+                    Modifier
+                        .size(28.dp)
+                        .border(2.dp, if (b == band) Color.White else Color.Transparent, CircleShape)
+                        .padding(4.dp)
+                        .background(Color.hsv(b.hue, 0.75f, 0.95f), CircleShape)
+                        .clickable { band = b },
+                )
+            }
+        }
+        HslSlider("Hue", edit.hslHue[band.ordinal]) {
+            model.update(edit.copy(hslHue = edit.hslHue.toMutableList().also { list -> list[band.ordinal] = it }))
+        }
+        HslSlider("Saturation", edit.hslSaturation[band.ordinal]) {
+            model.update(edit.copy(hslSaturation = edit.hslSaturation.toMutableList().also { list -> list[band.ordinal] = it }))
+        }
+        HslSlider("Luminance", edit.hslLuminance[band.ordinal]) {
+            model.update(edit.copy(hslLuminance = edit.hslLuminance.toMutableList().also { list -> list[band.ordinal] = it }))
+        }
+    }
+}
+
+@Composable
+private fun HslSlider(title: String, value: Float, onChange: (Float) -> Unit) {
+    Row(Modifier.padding(horizontal = 16.dp).height(36.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, fontSize = 12.sp, color = Color.Gray, modifier = Modifier.width(72.dp))
+        Slider(value = value, onValueChange = onChange, valueRange = -1f..1f, modifier = Modifier.weight(1f))
+        Text(
+            "${(value * 100).roundToInt()}",
+            fontSize = 12.sp,
+            color = Color.Gray,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(36.dp),
+        )
     }
 }
 

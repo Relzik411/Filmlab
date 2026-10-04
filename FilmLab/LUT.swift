@@ -27,6 +27,13 @@ struct LUT: Identifiable, Sendable {
     /// RGBA Float32 values, red changing fastest.
     let data: Data
 
+    init(id: String, name: String, dimension: Int, data: Data) {
+        self.id = id
+        self.name = name
+        self.dimension = dimension
+        self.data = data
+    }
+
     init(contentsOf url: URL) throws {
         let text = try String(contentsOf: url, encoding: .utf8)
         var size = 0

@@ -23,7 +23,11 @@ or push a tag such as `v0.2.0`.
 - **My presets**: tap **New** in the Looks strip to save the current look, strength, adjustments and light
   leak under a name (crop is left out, since it belongs to each photo). Saved presets sit next to **New**,
   previewed on the open photo; tap one to apply it (undoable). Long-press to rename or delete.
-- **Adjust**: exposure, contrast, saturation, warmth, fade, vignette, grain.
+- **Adjust**: exposure, contrast, highlights, shadows, saturation, warmth, tint, fade, sharpen, vignette,
+  grain, and **HSL**: hue, saturation and luminance for eight colour bands (red, orange, yellow, green,
+  aqua, blue, purple, magenta). Highlights, shadows and HSL are baked into a 33-point LUT whenever they
+  change, so both platforms run the same maths and each pixel needs one lookup. `docs/adjustments.jpg`
+  shows examples.
 - **Effects**: five light leaks (Amber, Rose, Sunset, Haze, Prism) with an amount slider. **Shift** moves the
   leak to another corner. The leaks are drawn by code from soft coloured glows, so there are no image files
   to license.
@@ -81,6 +85,7 @@ first. Create a key once with `keytool -genkeypair -keystore filmlab.keystore -a
 | `CropOverlay.swift` | The draggable crop box. |
 | `LightLeak.swift` | Light leak styles and how they are drawn. |
 | `History.swift` | Undo and redo. |
+| `ToneColor.swift` | Builds the highlights/shadows/HSL LUT; the HSL bands. |
 | `EditStore.swift` | Saves each photo's edits as JSON in Application Support. |
 | `PresetStore.swift` | Saves your presets as JSON in Application Support. |
 
@@ -98,10 +103,12 @@ In `android/app/src/main/java/com/example/filmlab/`:
 | `Crop.kt` | Crop state, crop-box arithmetic, and the rotate/flip/straighten/crop geometry. |
 | `LightLeak.kt` | Light leak styles (drawn in `Processor.kt`). |
 | `History.kt` | Undo and redo. |
+| `ToneColor.kt` | Builds the highlights/shadows/HSL LUT; the HSL bands. |
 | `EditStore.kt` | Saves each photo's edits as JSON in the app's files. |
 | `PresetStore.kt` | Saves your presets as JSON in the app's files. |
 
-Crop arithmetic and the light leak styles are written twice, once per platform; keep them in step.
+Crop arithmetic, the light leak styles and the tone/HSL maths are written twice, once per platform; keep them
+in step.
 
 ## Looks
 

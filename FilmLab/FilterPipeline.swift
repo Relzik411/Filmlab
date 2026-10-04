@@ -9,6 +9,14 @@ enum FilterPipeline {
         var image = Geometry.apply(edit.crop, to: input, cropping: cropping)
         let extent = image.extent
 
+        if edit.sharpen > 0 {
+            let f = CIFilter.sharpenLuminance()
+            f.inputImage = image.clampedToExtent() // so the edges have neighbours too
+            f.sharpness = Float(edit.sharpen) * 1.5
+            f.radius = Float(1.5 * max(1, max(extent.width, extent.height) / 1500))
+            image = f.outputImage?.cropped(to: extent) ?? image
+        }
+
         // 1. Basic corrections, before the look, like correcting exposure before printing.
         if edit.exposure != 0 {
             let f = CIFilter.exposureAdjust()
@@ -24,24 +32,24 @@ enum FilterPipeline {
             f.saturation = Float(1 + edit.saturation)
             image = f.outputImage ?? image
         }
-        if edit.warmth != 0 {
+        if edit.warmth != 0 || edit.tint != 0 {
+            // Warmth trades red against blue; tint trades green against magenta.
             let w = CGFloat(edit.warmth) * 0.12
+            let t = CGFloat(edit.tint)
             let f = CIFilter.colorMatrix()
             f.inputImage = image
-            f.rVector = CIVector(x: 1 + w, y: 0, z: 0, w: 0)
-            f.gVector = CIVector(x: 0, y: 1, z: 0, w: 0)
-            f.bVector = CIVector(x: 0, y: 0, z: 1 - w, w: 0)
+            f.rVector = CIVector(x: (1 + w) * (1 + t * 0.05), y: 0, z: 0, w: 0)
+            f.gVector = CIVector(x: 0, y: 1 - t * 0.1, z: 0, w: 0)
+            f.bVector = CIVector(x: 0, y: 0, z: (1 - w) * (1 + t * 0.05), w: 0)
             image = f.outputImage ?? image
+        }
+        if let tone = ToneColor.lut(for: edit) {
+            image = applyCube(tone, to: image) ?? image
         }
 
         // 2. The film look, blended with the original by its strength.
         if let lut, edit.intensity > 0 {
-            let f = CIFilter.colorCubeWithColorSpace()
-            f.inputImage = image
-            f.cubeDimension = Float(lut.dimension)
-            f.cubeData = lut.data
-            f.colorSpace = LUT.colorSpace
-            if let graded = f.outputImage {
+            if let graded = applyCube(lut, to: image) {
                 if edit.intensity >= 1 {
                     image = graded
                 } else {
@@ -80,6 +88,15 @@ enum FilterPipeline {
         }
 
         return image.cropped(to: extent)
+    }
+
+    private static func applyCube(_ lut: LUT, to image: CIImage) -> CIImage? {
+        let f = CIFilter.colorCubeWithColorSpace()
+        f.inputImage = image
+        f.cubeDimension = Float(lut.dimension)
+        f.cubeData = lut.data
+        f.colorSpace = LUT.colorSpace
+        return f.outputImage
     }
 
     private static func addGrain(to image: CIImage, amount: CGFloat, extent: CGRect) -> CIImage {
