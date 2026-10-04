@@ -12,6 +12,7 @@ targets:
   FilmLab:
     type: application
     platform: iOS
+    scheme: {}
     sources:
       - path: FilmLab
         excludes:

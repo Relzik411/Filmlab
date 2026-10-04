@@ -1,16 +1,32 @@
 # FilmLab
 
-A SwiftUI prototype of a film-look photo editor for iPhone. Photos only.
+A prototype film-look photo editor for iPhone (SwiftUI) and Android (Jetpack Compose). Photos only.
+
+## Download
+
+Get the latest build from [Releases](../../releases).
+
+- **Android** (10 or later): download `FilmLab.apk` on the phone, open it, and allow installs from
+  your browser when asked.
+- **iPhone** (iOS 17 or later): `FilmLab-unsigned.ipa` has to be signed before it will install. Use
+  [AltStore](https://altstore.io) or [Sideloadly](https://sideloadly.io) with your Apple ID. With a free
+  Apple ID the app must be refreshed every 7 days. Wider distribution needs an Apple Developer account
+  ($99/year) and TestFlight.
+
+Every push to `main` builds both apps in GitHub Actions (download them from the run's artifacts).
+Pushing a tag such as `v0.2.0` also publishes a release.
+
+## Features
 
 - Pick a photo, then tap a **look** (a 3D LUT) and set its strength.
 - **Adjust**: exposure, contrast, saturation, warmth, fade, vignette, grain.
 - Press and hold the photo to compare with the original.
-- **Save** writes a full-resolution HEIC to Photos.
+- **Save** writes a full-resolution copy: HEIC to Photos on iPhone, JPEG to Pictures/FilmLab on Android.
 
 Edits are never baked in while you work. A 1600px copy is used for the live preview, and the same
-Core Image recipe runs on the full-size photo when you save.
+edit runs on the full-size photo when you save.
 
-## Run it
+## Run the iOS app from source
 
 Requires a Mac with Xcode 15 or later. The app targets iOS 17.
 
@@ -26,7 +42,18 @@ Without XcodeGen: create a new iOS App project in Xcode named FilmLab (SwiftUI, 
 its generated `ContentView.swift` and app file, drag in the `FilmLab/` folder (including `LUTs/`),
 and add the Info.plist key `NSPhotoLibraryAddUsageDescription`.
 
-## Code
+## Run the Android app from source
+
+Open `android/` in Android Studio and run, or `cd android && ./gradlew installDebug` with a device
+connected. The Android app reads the same `.cube` files from `FilmLab/LUTs/`.
+
+Release APKs are signed with the key in these repository secrets, if set: `ANDROID_KEYSTORE_BASE64`
+(the keystore file, base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+Without them CI signs with a throwaway debug key, so installing a newer build means removing the old one
+first. Create a key once with `keytool -genkeypair -keystore filmlab.keystore -alias filmlab -keyalg RSA
+-validity 10000`, keep it safe, and add the secrets under Settings → Secrets and variables → Actions.
+
+## iOS code
 
 | File | What it does |
 |---|---|
@@ -36,6 +63,18 @@ and add the Info.plist key `NSPhotoLibraryAddUsageDescription`.
 | `EditorModel.swift` | Photo loading, merged preview renders, thumbnails, saving to Photos. |
 | `EditorView.swift` | The editor screen. |
 | `CreditsView.swift` | Attribution the LUT licence requires. |
+
+## Android code
+
+In `android/app/src/main/java/com/example/filmlab/`:
+
+| File | What it does |
+|---|---|
+| `Lut.kt` | Reads `.cube` files from the app's assets. |
+| `Processor.kt` | Applies an edit on the CPU across all cores, mirroring the iOS pipeline. |
+| `PhotoIO.kt` | Decodes photos upright in sRGB; saves JPEGs to Pictures/FilmLab. |
+| `EditorViewModel.kt` | Loading, cancellable preview renders, thumbnails, saving. |
+| `MainActivity.kt` | The editor screen. |
 
 ## Looks
 
