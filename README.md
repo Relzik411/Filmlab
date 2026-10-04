@@ -27,6 +27,11 @@ or push a tag such as `v0.2.0`.
 - **Crop**: drag the box's corners or move it; ratios Free, Original, 1:1, 4:5, 9:16 and 16:9; straighten
   ±20° (the photo is scaled up so no empty corners show); rotate 90° and flip.
 - Press and hold the photo to compare with the original.
+- **Undo / redo** in the top bar. A step is recorded when you pause for half a second, so one slider drag
+  is one step. **Revert to Original** (in the ••• menu) is a step too, so it can be undone.
+- **Edits are saved automatically.** Open the same photo again and its edits come back; Undo then returns
+  to the original. Photos are recognised by a fingerprint (SHA-256) of their contents, so it works however
+  the photo is opened. Edits are stored in the app's own storage, never in the photo.
 - **Save** writes a full-resolution copy: HEIC to Photos on iPhone, JPEG to Pictures/FilmLab on Android.
 
 Edits are never baked in while you work. A 1600px copy is used for the live preview, and the same
@@ -72,6 +77,8 @@ first. Create a key once with `keytool -genkeypair -keystore filmlab.keystore -a
 | `Crop.swift` | Crop state, crop-box arithmetic, and the rotate/flip/straighten/crop geometry. |
 | `CropOverlay.swift` | The draggable crop box. |
 | `LightLeak.swift` | Light leak styles and how they are drawn. |
+| `History.swift` | Undo and redo. |
+| `EditStore.swift` | Saves each photo's edits as JSON in Application Support. |
 
 ## Android code
 
@@ -86,6 +93,8 @@ In `android/app/src/main/java/com/example/filmlab/`:
 | `MainActivity.kt` | The editor screen, including the crop box. |
 | `Crop.kt` | Crop state, crop-box arithmetic, and the rotate/flip/straighten/crop geometry. |
 | `LightLeak.kt` | Light leak styles (drawn in `Processor.kt`). |
+| `History.kt` | Undo and redo. |
+| `EditStore.kt` | Saves each photo's edits as JSON in the app's files. |
 
 Crop arithmetic and the light leak styles are written twice, once per platform; keep them in step.
 

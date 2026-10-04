@@ -1,7 +1,7 @@
 import CoreGraphics
 import CoreImage
 
-enum CropAspect: String, CaseIterable, Identifiable, Sendable {
+enum CropAspect: String, CaseIterable, Identifiable, Sendable, Codable {
     case free = "Free"
     case original = "Original"
     case square = "1:1"
@@ -25,7 +25,7 @@ enum CropAspect: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// Rotation, flip, straighten and crop. Applied before any colour work.
-struct CropState: Equatable, Sendable {
+struct CropState: Equatable, Sendable, Codable {
     /// Clockwise quarter turns.
     var quarterTurns = 0
     var flipped = false

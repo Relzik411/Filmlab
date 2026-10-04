@@ -22,6 +22,10 @@ final class EditorModel {
 
     var hasPhoto: Bool { fullImage != nil }
 
+    private(set) var history = History(EditState())
+    var canUndo: Bool { hasPhoto && history.canUndo(from: edit) }
+    var canRedo: Bool { history.canRedo(from: edit) }
+
     /// The frame the crop box is drawn in: the preview photo after quarter turns.
     var cropFrameSize: CGSize {
         guard previewSourceSize.width > 0 else { return CGSize(width: 1, height: 1) }
@@ -42,6 +46,9 @@ final class EditorModel {
     private var previewSourceSize = CGSize.zero
     @ObservationIgnored private var lastRender: (edit: EditState, cropping: Bool, source: CIImage)?
     @ObservationIgnored private var comparisonCrop: CropState?
+    /// Fingerprint of the open photo, under which its edits are saved.
+    @ObservationIgnored private var photoKey: String?
+    @ObservationIgnored private var recordTask: Task<Void, Never>?
     @ObservationIgnored private var thumbnailSource: CIImage?
     @ObservationIgnored private var isRendering = false
     @ObservationIgnored private var needsRender = false
@@ -63,17 +70,25 @@ final class EditorModel {
                 return
             }
             let renderer = renderer
-            let (preview, thumbnail, original) = await Task.detached(priority: .userInitiated) { () -> (CIImage, CIImage, CGImage?) in
+            let (preview, thumbnail, original, key) = await Task.detached(priority: .userInitiated) {
+                () -> (CIImage, CIImage, CGImage?, String) in
                 let preview = renderer.downscaled(image, maxSide: 1600)
-                return (preview, renderer.downscaled(image, maxSide: 240), renderer.cgImage(preview))
+                return (preview, renderer.downscaled(image, maxSide: 240), renderer.cgImage(preview), EditStore.key(for: data))
             }.value
+
+            commit() // the previous photo's last change
+            photoKey = key
+            let saved = EditStore.load(key: key)
 
             fullImage = image
             previewSource = preview
             thumbnailSource = thumbnail
             originalPreview = original
             previewImage = original
-            edit = EditState()
+            // Saved edits come back as one undo step, so Undo returns to the original.
+            history = History(EditState())
+            edit = saved ?? EditState()
+            history.record(edit)
             lastRender = nil
             comparisonCrop = CropState()
             render()
@@ -130,6 +145,51 @@ final class EditorModel {
                 render()
             }
         }
+    }
+
+    /// Call whenever `edit` changes.
+    func editDidChange() {
+        render()
+        scheduleRecord()
+    }
+
+    /// Records any pending change as an undo step and saves the photo's edits.
+    func commit() {
+        recordTask?.cancel()
+        if history.record(edit) { persist() }
+    }
+
+    func undo() {
+        guard let previous = history.undo(from: edit) else { return }
+        edit = previous
+        persist()
+    }
+
+    func redo() {
+        guard let next = history.redo(from: edit) else { return }
+        edit = next
+        persist()
+    }
+
+    func revertToOriginal() {
+        commit()
+        edit = EditState()
+        commit()
+    }
+
+    /// A step is recorded once editing pauses, so one slider drag is one undo step.
+    private func scheduleRecord() {
+        recordTask?.cancel()
+        recordTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.commit()
+        }
+    }
+
+    private func persist() {
+        guard let photoKey else { return }
+        EditStore.save(history.committed, key: photoKey)
     }
 
     func resetAdjustments() {

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Everything the user has changed. The original photo is never modified; edits are re-applied from this.
-struct EditState: Equatable, Sendable {
+struct EditState: Equatable, Sendable, Codable {
     var lutID: String?
     var intensity: Double = 1
     var exposure: Double = 0

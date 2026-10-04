@@ -11,6 +11,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -41,6 +43,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     var isExporting by mutableStateOf(false)
         private set
     var message by mutableStateOf<String?>(null)
+    var canUndo by mutableStateOf(false)
+        private set
+    var canRedo by mutableStateOf(false)
+        private set
     private var previewSize by mutableStateOf(1 to 1)
 
     val hasPhoto get() = original != null
@@ -57,6 +63,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private var previewSource: Bitmap? = null
     private var thumbnailSource: Bitmap? = null
     private var comparisonCrop: CropState? = null
+    private var history = History(EditState())
+    /** Fingerprint of the open photo, under which its edits are saved. */
+    private var photoKey: String? = null
+    private var recordJob: Job? = null
     private val requests = MutableStateFlow(RenderRequest(0, EditState(), true))
 
     init {
@@ -88,6 +98,61 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     fun update(newEdit: EditState) {
         edit = newEdit
         requestRender()
+        scheduleRecord()
+        refreshHistory()
+    }
+
+    /** Records any pending change as an undo step and saves the photo's edits. */
+    fun commit() {
+        recordJob?.cancel()
+        if (history.record(edit)) persist()
+        refreshHistory()
+    }
+
+    fun undo() {
+        val previous = history.undo(edit) ?: return
+        showHistoryState(previous)
+    }
+
+    fun redo() {
+        val next = history.redo(edit) ?: return
+        showHistoryState(next)
+    }
+
+    fun revertToOriginal() {
+        commit()
+        edit = EditState()
+        requestRender()
+        commit()
+    }
+
+    private fun showHistoryState(state: EditState) {
+        recordJob?.cancel()
+        edit = state
+        requestRender()
+        persist()
+        refreshHistory()
+    }
+
+    /** A step is recorded once editing pauses, so one slider drag is one undo step. */
+    private fun scheduleRecord() {
+        recordJob?.cancel()
+        recordJob = viewModelScope.launch {
+            delay(500)
+            commit()
+        }
+    }
+
+    private fun refreshHistory() {
+        canUndo = hasPhoto && history.canUndo(edit)
+        canRedo = history.canRedo(edit)
+    }
+
+    private fun persist() {
+        val key = photoKey ?: return
+        val state = history.committed
+        val context = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) { EditStore.save(context, key, state) }
     }
 
     private fun requestRender() {
@@ -131,11 +196,17 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 val (previewBitmap, thumbBitmap) = withContext(Dispatchers.IO) {
                     PhotoIO.decode(context, uri, 1600) to PhotoIO.decode(context, uri, 240)
                 }
+                val (key, saved) = withContext(Dispatchers.IO) {
+                    val key = EditStore.key(context, uri)
+                    key to key?.let { EditStore.load(context, it) }
+                }
                 if (previewBitmap == null || thumbBitmap == null) {
                     message = "Couldn't open that photo."
                     return@launch
                 }
+                commit() // the previous photo's last change
                 photoUri = uri
+                photoKey = key
                 photoVersion++
                 previewSource = previewBitmap
                 previewSize = previewBitmap.width to previewBitmap.height
@@ -146,7 +217,12 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
                 originalThumbnail = thumbBitmap.asImageBitmap()
                 thumbnails = emptyMap()
                 leakThumbnails = emptyMap()
-                update(EditState())
+                // Saved edits come back as one undo step, so Undo returns to the original.
+                history = History(EditState())
+                edit = saved ?: EditState()
+                history.record(edit)
+                requestRender()
+                refreshHistory()
                 makeThumbnails()
             } finally {
                 isLoading = false

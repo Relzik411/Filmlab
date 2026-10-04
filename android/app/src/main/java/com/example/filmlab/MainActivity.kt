@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -37,6 +38,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
@@ -71,14 +74,21 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
+    private val model: EditorViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                EditorScreen()
+                EditorScreen(model)
             }
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        model.commit() // save the latest change when the app is left
     }
 }
 
@@ -111,8 +121,30 @@ fun EditorScreen(model: EditorViewModel = viewModel()) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(onClick = pickPhoto) { Text("Photos") }
-            TextButton(onClick = { showingCredits = true }) { Text("Credits") }
+            TextButton(onClick = model::undo, enabled = model.canUndo) { Text("↶", fontSize = 22.sp) }
+            TextButton(onClick = model::redo, enabled = model.canRedo) { Text("↷", fontSize = 22.sp) }
             Spacer(Modifier.weight(1f))
+            Box {
+                var menuOpen by remember { mutableStateOf(false) }
+                TextButton(onClick = { menuOpen = true }) { Text("•••") }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Revert to Original") },
+                        enabled = model.hasPhoto && model.edit != EditState(),
+                        onClick = {
+                            menuOpen = false
+                            model.revertToOriginal()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Credits") },
+                        onClick = {
+                            menuOpen = false
+                            showingCredits = true
+                        },
+                    )
+                }
+            }
             if (model.isExporting) {
                 CircularProgressIndicator(Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
             } else {

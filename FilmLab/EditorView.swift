@@ -15,6 +15,7 @@ struct EditorView: View {
     @State private var adjustment = Adjustment.exposure
     @State private var showingOriginal = false
     @State private var showingCredits = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -26,7 +27,6 @@ struct EditorView: View {
                 }
             }
             .background(Color.black)
-            .navigationTitle("FilmLab")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color.black, for: .navigationBar)
             .toolbar {
@@ -34,11 +34,25 @@ struct EditorView: View {
                     PhotosPicker(selection: $pickerItem, matching: .images) {
                         Image(systemName: "photo.on.rectangle")
                     }
-                    Button { showingCredits = true } label: {
-                        Image(systemName: "info.circle")
+                    Button { model.undo() } label: {
+                        Image(systemName: "arrow.uturn.backward")
                     }
+                    .disabled(!model.canUndo)
+                    Button { model.redo() } label: {
+                        Image(systemName: "arrow.uturn.forward")
+                    }
+                    .disabled(!model.canRedo)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Revert to Original", systemImage: "arrow.counterclockwise") {
+                            model.revertToOriginal()
+                        }
+                        .disabled(!model.hasPhoto || model.edit == EditState())
+                        Button("Credits", systemImage: "info.circle") { showingCredits = true }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
                     Button {
                         Task { await model.export() }
                     } label: {
@@ -58,7 +72,10 @@ struct EditorView: View {
             guard let item = pickerItem else { return }
             Task { await model.load(item) }
         }
-        .onChange(of: model.edit) { model.render() }
+        .onChange(of: model.edit) { model.editDidChange() }
+        .onChange(of: scenePhase) {
+            if scenePhase != .active { model.commit() }
+        }
         .onChange(of: tool) { model.setCropping(tool == .crop) }
         .alert(model.message ?? "", isPresented: Binding(
             get: { model.message != nil },
