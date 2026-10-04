@@ -18,6 +18,7 @@ struct EditorView: View {
     @State private var showingOriginal = false
     @State private var showingCredits = false
     @State private var showingSavePreset = false
+    @State private var categoryName: String?
     @State private var presetName = ""
     @State private var renamingPreset: Preset?
     @Environment(\.scenePhase) private var scenePhase
@@ -168,6 +169,7 @@ struct EditorView: View {
             if model.edit.lutID != nil {
                 LabeledSlider(title: "Strength", value: $model.edit.intensity, range: 0...1)
             }
+            categoryPicker
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     lookButton(id: nil, name: "Original", thumbnail: model.originalThumbnail)
@@ -190,7 +192,7 @@ struct EditorView: View {
                         .fill(Color(white: 0.25))
                         .frame(width: 1, height: 56)
                         .padding(.bottom, 18)
-                    ForEach(model.luts) { lut in
+                    ForEach(lutsInCategory) { lut in
                         lookButton(id: lut.id, name: lut.name, thumbnail: model.thumbnails[lut.id])
                     }
                 }
@@ -214,6 +216,32 @@ struct EditorView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    private var currentCategory: LookCategory? {
+        model.categories.first { $0.name == categoryName } ?? model.categories.first
+    }
+
+    private var lutsInCategory: [LUT] {
+        (currentCategory?.lutIDs ?? []).compactMap { id in model.luts.first { $0.id == id } }
+    }
+
+    private var categoryPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(model.categories) { category in
+                    let selected = category.id == currentCategory?.id
+                    Button(category.name) { categoryName = category.name }
+                        .font(.caption.weight(selected ? .semibold : .regular))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(selected ? Color(white: 0.25) : .clear, in: Capsule())
+                        .foregroundStyle(selected ? Color.primary : Color.secondary)
+                }
+            }
+            .padding(.horizontal)
+        }
+        .buttonStyle(.plain)
     }
 
     private var newPresetTile: some View {

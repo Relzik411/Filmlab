@@ -15,12 +15,6 @@ struct LUT: Identifiable, Sendable {
     /// The looks are graded on sRGB-encoded values, so the lookup has to happen in sRGB.
     static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    /// Display order for the bundled looks. Any other .cube file is listed after these.
-    static let preferredOrder = [
-        "Golden", "Portrait", "Mint", "Everyday", "Summer", "Vivid", "Classic", "Warm",
-        "Dusk", "Winter", "Instant", "Faded", "Cross", "Mono", "Grit",
-    ]
-
     let id: String
     let name: String
     let dimension: Int
@@ -68,22 +62,59 @@ struct LUT: Identifiable, Sendable {
         dimension = size
         data = values.withUnsafeBufferPointer { Data(buffer: $0) }
     }
+}
 
-    /// Loads every `.cube` file in the app bundle.
-    static func loadBundled() -> [LUT] {
+/// A named group of looks, as listed in looks.json.
+struct LookCategory: Identifiable, Sendable {
+    let name: String
+    let lutIDs: [String]
+    var id: String { name }
+}
+
+/// The bundled looks and how they are grouped. looks.json (next to the .cube files, shared with
+/// Android) sets the categories and their order; any .cube file it doesn't list goes under "More".
+struct LookLibrary: Sendable {
+    let luts: [LUT]
+    let categories: [LookCategory]
+
+    private struct Manifest: Decodable {
+        struct Category: Decodable {
+            let name: String
+            let looks: [String]
+        }
+        let categories: [Category]
+    }
+
+    static func loadBundled() -> LookLibrary {
         let urls = Bundle.main.urls(forResourcesWithExtension: "cube", subdirectory: nil) ?? []
-        let luts = urls.compactMap { url -> LUT? in
+        var byID: [String: LUT] = [:]
+        for url in urls {
             do {
-                return try LUT(contentsOf: url)
+                let lut = try LUT(contentsOf: url)
+                byID[lut.id] = lut
             } catch {
                 print("Skipping LUT: \(error.localizedDescription)")
-                return nil
             }
         }
-        return luts.sorted { a, b in
-            let ia = preferredOrder.firstIndex(of: a.id) ?? .max
-            let ib = preferredOrder.firstIndex(of: b.id) ?? .max
-            return ia == ib ? a.name < b.name : ia < ib
+
+        var manifest: Manifest?
+        if let url = Bundle.main.url(forResource: "looks", withExtension: "json"),
+           let data = try? Data(contentsOf: url) {
+            manifest = try? JSONDecoder().decode(Manifest.self, from: data)
         }
+
+        var categories = (manifest?.categories ?? []).map { category in
+            LookCategory(name: category.name, lutIDs: category.looks.filter { byID[$0] != nil })
+        }
+        let listed = Set(categories.flatMap(\.lutIDs))
+        let unlisted = byID.values.filter { !listed.contains($0.id) }.sorted { $0.name < $1.name }.map(\.id)
+        if !unlisted.isEmpty {
+            categories.append(LookCategory(name: "More", lutIDs: unlisted))
+        }
+        categories.removeAll { $0.lutIDs.isEmpty }
+
+        var seen = Set<String>()
+        let ordered = categories.flatMap(\.lutIDs).filter { seen.insert($0).inserted }.compactMap { byID[$0] }
+        return LookLibrary(luts: ordered, categories: categories)
     }
 }

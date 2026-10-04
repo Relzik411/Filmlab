@@ -23,6 +23,8 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     var luts by mutableStateOf<List<Lut>>(emptyList())
         private set
+    var categories by mutableStateOf<List<LookCategory>>(emptyList())
+        private set
     var edit by mutableStateOf(EditState())
         private set
     var preview by mutableStateOf<ImageBitmap?>(null)
@@ -75,7 +77,9 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         viewModelScope.launch {
-            luts = withContext(Dispatchers.IO) { Lut.loadAll(application.assets) }
+            val library = withContext(Dispatchers.IO) { LookLibrary.load(application.assets) }
+            luts = library.luts
+            categories = library.categories
             makeThumbnails()
         }
         // collectLatest cancels a render in progress when a newer edit arrives.

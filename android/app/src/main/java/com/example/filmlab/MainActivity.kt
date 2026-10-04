@@ -247,6 +247,9 @@ private fun Controls(model: EditorViewModel) {
 private fun LooksPanel(model: EditorViewModel) {
     val edit = model.edit
     var naming by remember { mutableStateOf<PresetNaming?>(null) }
+    var categoryName by remember { mutableStateOf<String?>(null) }
+    val category = model.categories.firstOrNull { it.name == categoryName } ?: model.categories.firstOrNull()
+    val lutsInCategory = category?.lutIds.orEmpty().mapNotNull { id -> model.luts.firstOrNull { it.id == id } }
     naming?.let { current ->
         PresetNameDialog(
             title = if (current.preset == null) "Save Preset" else "Rename Preset",
@@ -261,6 +264,15 @@ private fun LooksPanel(model: EditorViewModel) {
         if (edit.lutId != null) {
             LabeledSlider("Strength", edit.intensity, 0f..1f) { model.update(edit.copy(intensity = it)) }
         }
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            items(model.categories, key = { it.name }) { c ->
+                ToolChip(c.name, c == category, changed = false) { categoryName = c.name }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -293,7 +305,7 @@ private fun LooksPanel(model: EditorViewModel) {
             item {
                 Box(Modifier.padding(top = 6.dp).size(1.dp, 56.dp).background(Color(0xFF404040)))
             }
-            items(model.luts, key = { it.id }) { lut ->
+            items(lutsInCategory, key = { it.id }) { lut ->
                 LookTile(lut.name, model.thumbnails[lut.id], edit.lutId == lut.id) {
                     if (edit.lutId != lut.id) model.update(edit.copy(lutId = lut.id, intensity = 1f))
                 }
@@ -659,10 +671,13 @@ private fun CreditsDialog(onDismiss: () -> Unit) {
         title = { Text("Credits") },
         text = {
             Text(
-                "The looks in FilmLab are adapted from the RawTherapee Film Simulation Collection " +
-                    "by Pat David, Pavlov Dmitry and Michael Ezra, licensed under CC BY-SA 4.0. They were " +
+                "Most looks are adapted from the RawTherapee Film Simulation Collection by Pat David, " +
+                    "Pavlov Dmitry and Michael Ezra, and from the PictureFX CLUTs by Marc Roovers " +
+                    "(Heat, Breeze, Sepia, Antique, Silver), both licensed under CC BY-SA 4.0. They were " +
                     "converted from Hald CLUT images to 33-point .cube LUTs and renamed. The adapted files " +
                     "are shared under the same licence.\n\n" +
+                    "1975, Memory, Sunbleached, Expired, Tide and Disposable are FilmLab originals, " +
+                    "dedicated to the public domain (CC0).\n\n" +
                     "FilmLab is not affiliated with or endorsed by any film manufacturer."
             )
         },

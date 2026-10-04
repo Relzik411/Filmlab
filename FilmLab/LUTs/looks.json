@@ -1,0 +1,21 @@
+{
+  "categories": [
+    {
+      "name": "Vintage",
+      "looks": ["1975", "Memory", "Sunbleached", "Heat", "Cream", "Peel", "Retro", "Dusty", "Pale",
+                "Expired", "Tide", "Disposable", "Breeze", "Candle", "Smoke", "Antique", "Faded", "Instant"]
+    },
+    {
+      "name": "Film",
+      "looks": ["Golden", "Portrait", "Mint", "Everyday", "Summer", "Vivid", "Classic"]
+    },
+    {
+      "name": "Mood",
+      "looks": ["Warm", "Dusk", "Winter", "Cross", "Lime", "Ember"]
+    },
+    {
+      "name": "B&W",
+      "looks": ["Mono", "Grit", "Silver", "Sepia"]
+    }
+  ]
+}

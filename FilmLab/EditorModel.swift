@@ -8,6 +8,7 @@ import SwiftUI
 @Observable
 final class EditorModel {
     var luts: [LUT] = []
+    var categories: [LookCategory] = []
     var edit = EditState()
     var previewImage: CGImage?
     var originalPreview: CGImage?
@@ -57,7 +58,9 @@ final class EditorModel {
     @ObservationIgnored private let renderer = Renderer()
 
     func loadLUTs() async {
-        luts = await Task.detached(priority: .userInitiated) { LUT.loadBundled() }.value
+        let library = await Task.detached(priority: .userInitiated) { LookLibrary.loadBundled() }.value
+        luts = library.luts
+        categories = library.categories
         makeThumbnails()
     }
 

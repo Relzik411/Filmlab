@@ -112,33 +112,52 @@ in step.
 
 ## Looks
 
-The 15 bundled looks are adapted from the
-[RawTherapee Film Simulation Collection](https://rawpedia.rawtherapee.com/Film_Simulation)
-(CC BY-SA 4.0). See `FilmLab/LUTs/LICENSE.txt`. `docs/lut-preview.jpg` shows each one on a sample photo.
+35 looks in four categories (Vintage, Film, Mood, B&W), chosen with the chips above the strip.
+`FilmLab/LUTs/looks.json` sets the categories and their order for both apps. See
+`FilmLab/LUTs/LICENSE.txt` for licences. `docs/vintage-looks.jpg` and `docs/lut-preview.jpg` show them on a
+sample photo.
 
-| Look | Based on |
-|---|---|
-| Golden | Kodak Portra 400 |
-| Portrait | Kodak Portra 160 NC |
-| Mint | Fuji 400H |
-| Everyday | Fuji Superia 400 |
-| Summer | Agfa Vista 200 |
-| Vivid | Kodak Ektar 100 |
-| Classic | Kodak Kodachrome 64 |
-| Warm | CreativePack SoftWarming |
-| Dusk | CreativePack LateSunset |
-| Winter | CreativePack CrispWinter |
-| Instant | Polaroid 690 Warm |
-| Faded | Polaroid Polachrome |
-| Cross | Lomography X-Pro Slide 200 |
-| Mono | Ilford HP5 Plus 400 |
-| Grit | Kodak Tri-X 400 |
+| Look | Category | Source |
+|---|---|---|
+| 1975, Memory, Sunbleached, Expired, Tide, Disposable | Vintage | FilmLab originals (CC0), `scripts/make_vintage_luts.py` |
+| Heat | Vintage | PictureFX GoldFX Summer Heat |
+| Breeze | Vintage | PictureFX GoldFX Spring Breeze |
+| Antique | Vintage | PictureFX AnalogFX Anno 1870 Color |
+| Cream | Vintage | RawTherapee: Polaroid PX-680 |
+| Peel | Vintage | RawTherapee: Polaroid 669 |
+| Retro | Vintage | RawTherapee: Polaroid PX-70 Cold |
+| Dusty | Vintage | RawTherapee: Polaroid 690 Cold |
+| Pale | Vintage | RawTherapee: Fuji FP-100c Cool |
+| Candle | Vintage | RawTherapee: CreativePack CandleLight |
+| Smoke | Vintage | RawTherapee: CreativePack Smokey |
+| Faded | Vintage | RawTherapee: Polaroid Polachrome |
+| Instant | Vintage | RawTherapee: Polaroid 690 Warm |
+| Golden | Film | RawTherapee: Kodak Portra 400 |
+| Portrait | Film | RawTherapee: Kodak Portra 160 NC |
+| Mint | Film | RawTherapee: Fuji 400H |
+| Everyday | Film | RawTherapee: Fuji Superia 400 |
+| Summer | Film | RawTherapee: Agfa Vista 200 |
+| Vivid | Film | RawTherapee: Kodak Ektar 100 |
+| Classic | Film | RawTherapee: Kodak Kodachrome 64 |
+| Warm | Mood | RawTherapee: CreativePack SoftWarming |
+| Dusk | Mood | RawTherapee: CreativePack LateSunset |
+| Winter | Mood | RawTherapee: CreativePack CrispWinter |
+| Cross | Mood | RawTherapee: Lomography X-Pro Slide 200 |
+| Lime | Mood | RawTherapee: Kodak Elite 100 XPRO |
+| Ember | Mood | RawTherapee: Lomography Redscale 100 |
+| Mono | B&W | RawTherapee: Ilford HP5 Plus 400 |
+| Grit | B&W | RawTherapee: Kodak Tri-X 400 |
+| Silver | B&W | PictureFX ZilverFX Vintage B&W |
+| Sepia | B&W | PictureFX AnalogFX Soft Sepia I |
 
-To add a look, put any 0–1 range 3D `.cube` file in `FilmLab/LUTs/`. To convert a Hald CLUT PNG:
+RawTherapee and PictureFX looks are CC BY-SA 4.0 (credited in the app's Credits screen); the originals
+are CC0.
+
+To add a look, put any 0–1 range 3D `.cube` file in `FilmLab/LUTs/` and list it in `looks.json` (unlisted
+files appear under "More"). To convert a Hald CLUT PNG, or to tweak and regenerate the originals:
 
 ```sh
 pip install pillow numpy
 python3 scripts/hald_to_cube.py "Some Hald.png" FilmLab/LUTs/Name.cube --title Name
+python3 scripts/make_vintage_luts.py FilmLab/LUTs
 ```
-
-Then add the name to `LUT.preferredOrder` if it should not be listed last.

@@ -1,17 +1,12 @@
 package com.example.filmlab
 
 import android.content.res.AssetManager
+import org.json.JSONObject
 
 /** A 3D colour lookup table from a `.cube` file. RGB triples, red changing fastest. */
 class Lut(val id: String, val name: String, val size: Int, val table: FloatArray) {
 
     companion object {
-        /** Display order for the bundled looks. Any other .cube file is listed after these. */
-        private val preferredOrder = listOf(
-            "Golden", "Portrait", "Mint", "Everyday", "Summer", "Vivid", "Classic", "Warm",
-            "Dusk", "Winter", "Instant", "Faded", "Cross", "Mono", "Grit",
-        )
-
         private val whitespace = Regex("\\s+")
 
         fun parse(id: String, text: String): Lut {
@@ -39,19 +34,47 @@ class Lut(val id: String, val name: String, val size: Int, val table: FloatArray
             require(size > 1 && count == table.size) { "$id is not a 3D .cube LUT" }
             return Lut(id, title ?: id, size, table)
         }
+    }
+}
 
-        /** Loads every `.cube` file in the app's assets. */
-        fun loadAll(assets: AssetManager): List<Lut> {
-            val files = assets.list("").orEmpty().filter { it.endsWith(".cube") }
-            val luts = files.mapNotNull { file ->
-                runCatching {
-                    val text = assets.open(file).bufferedReader().use { it.readText() }
-                    parse(file.removeSuffix(".cube"), text)
-                }.getOrNull()
+/** A named group of looks, as listed in looks.json. */
+data class LookCategory(val name: String, val lutIds: List<String>)
+
+/**
+ * The bundled looks and how they are grouped. looks.json (next to the .cube files, shared with iOS)
+ * sets the categories and their order; any .cube file it doesn't list goes under "More".
+ */
+class LookLibrary(val luts: List<Lut>, val categories: List<LookCategory>) {
+    companion object {
+        fun load(assets: AssetManager): LookLibrary {
+            val byId = assets.list("").orEmpty()
+                .filter { it.endsWith(".cube") }
+                .mapNotNull { file ->
+                    runCatching {
+                        val text = assets.open(file).bufferedReader().use { it.readText() }
+                        Lut.parse(file.removeSuffix(".cube"), text)
+                    }.getOrNull()
+                }
+                .associateBy { it.id }
+
+            val categories = mutableListOf<LookCategory>()
+            runCatching {
+                val json = JSONObject(assets.open("looks.json").bufferedReader().use { it.readText() })
+                val list = json.getJSONArray("categories")
+                for (i in 0 until list.length()) {
+                    val c = list.getJSONObject(i)
+                    val looks = c.getJSONArray("looks")
+                    val ids = (0 until looks.length()).map { looks.getString(it) }.filter { it in byId }
+                    categories += LookCategory(c.getString("name"), ids)
+                }
             }
-            return luts.sortedWith(
-                compareBy<Lut>({ preferredOrder.indexOf(it.id).let { i -> if (i < 0) Int.MAX_VALUE else i } }, { it.name })
-            )
+            val listed = categories.flatMap { it.lutIds }.toSet()
+            val unlisted = byId.values.filter { it.id !in listed }.sortedBy { it.name }.map { it.id }
+            if (unlisted.isNotEmpty()) categories += LookCategory("More", unlisted)
+            categories.removeAll { it.lutIds.isEmpty() }
+
+            val ordered = categories.flatMap { it.lutIds }.distinct().mapNotNull { byId[it] }
+            return LookLibrary(ordered, categories)
         }
     }
 }
