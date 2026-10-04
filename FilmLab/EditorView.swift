@@ -15,6 +15,9 @@ struct EditorView: View {
     @State private var adjustment = Adjustment.exposure
     @State private var showingOriginal = false
     @State private var showingCredits = false
+    @State private var showingSavePreset = false
+    @State private var presetName = ""
+    @State private var renamingPreset: Preset?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -166,6 +169,25 @@ struct EditorView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     lookButton(id: nil, name: "Original", thumbnail: model.originalThumbnail)
+                    newPresetTile
+                    ForEach(model.presets) { preset in
+                        tile(name: preset.name, thumbnail: model.presetThumbnails[preset.id], selected: model.isApplied(preset)) {
+                            model.apply(preset)
+                        }
+                        .contextMenu {
+                            Button("Rename", systemImage: "pencil") {
+                                presetName = preset.name
+                                renamingPreset = preset
+                            }
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                model.delete(preset)
+                            }
+                        }
+                    }
+                    Rectangle()
+                        .fill(Color(white: 0.25))
+                        .frame(width: 1, height: 56)
+                        .padding(.bottom, 18)
                     ForEach(model.luts) { lut in
                         lookButton(id: lut.id, name: lut.name, thumbnail: model.thumbnails[lut.id])
                     }
@@ -173,6 +195,41 @@ struct EditorView: View {
                 .padding(.horizontal)
             }
         }
+        .alert("Save Preset", isPresented: $showingSavePreset) {
+            TextField("Name", text: $presetName)
+            Button("Save") { model.savePreset(named: presetName) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Saves the look, adjustments and effects. Crop isn't included.")
+        }
+        .alert("Rename Preset", isPresented: Binding(
+            get: { renamingPreset != nil },
+            set: { if !$0 { renamingPreset = nil } }
+        )) {
+            TextField("Name", text: $presetName)
+            Button("Save") {
+                if let renamingPreset { model.rename(renamingPreset, to: presetName) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var newPresetTile: some View {
+        Button {
+            presetName = ""
+            showingSavePreset = true
+        } label: {
+            VStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color(white: 0.4), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                    .frame(width: 68, height: 68)
+                    .overlay {
+                        Image(systemName: "plus").font(.title3).foregroundStyle(Color.secondary)
+                    }
+                Text("New").font(.caption2).foregroundStyle(Color.secondary)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func lookButton(id: String?, name: String, thumbnail: CGImage?) -> some View {

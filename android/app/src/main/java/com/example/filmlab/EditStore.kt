@@ -47,7 +47,7 @@ object EditStore {
 
     private fun file(context: Context, key: String) = File(File(context.filesDir, "edits"), "$key.json")
 
-    private fun toJson(e: EditState) = JSONObject().apply {
+    internal fun toJson(e: EditState) = JSONObject().apply {
         put("lutId", e.lutId ?: JSONObject.NULL)
         put("intensity", e.intensity.toDouble())
         Adjustment.entries.forEach { put(it.name, it.get(e).toDouble()) }
@@ -66,7 +66,7 @@ object EditStore {
         })
     }
 
-    private fun fromJson(j: JSONObject): EditState {
+    internal fun fromJson(j: JSONObject): EditState {
         var edit = EditState(
             lutId = if (j.isNull("lutId")) null else j.getString("lutId"),
             intensity = j.optDouble("intensity", 1.0).toFloat(),

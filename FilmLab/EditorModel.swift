@@ -14,6 +14,8 @@ final class EditorModel {
     var originalThumbnail: CGImage?
     var thumbnails: [String: CGImage] = [:]
     var leakThumbnails: [Int: CGImage] = [:]
+    private(set) var presets = PresetStore.load()
+    var presetThumbnails: [UUID: CGImage] = [:]
     /// While true the preview shows the whole straightened photo so the crop box can be edited.
     private(set) var isCropping = false
     var isLoading = false
@@ -192,6 +194,65 @@ final class EditorModel {
         EditStore.save(history.committed, key: photoKey)
     }
 
+    // MARK: Presets
+
+    /// The current edit without its crop, which is what a preset holds.
+    private var look: EditState {
+        var look = edit
+        look.crop = CropState()
+        return look
+    }
+
+    func isApplied(_ preset: Preset) -> Bool { preset.edit == look }
+
+    func savePreset(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        presets.append(Preset(name: trimmed.isEmpty ? "Preset \(presets.count + 1)" : trimmed, edit: look))
+        presetsChanged()
+    }
+
+    func apply(_ preset: Preset) {
+        var applied = preset.edit
+        applied.crop = edit.crop
+        edit = applied
+    }
+
+    func rename(_ preset: Preset, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = presets.firstIndex(where: { $0.id == preset.id }) else { return }
+        presets[index].name = trimmed
+        presetsChanged()
+    }
+
+    func delete(_ preset: Preset) {
+        presets.removeAll { $0.id == preset.id }
+        presetsChanged()
+    }
+
+    private func presetsChanged() {
+        PresetStore.save(presets)
+        makePresetThumbnails()
+    }
+
+    private func makePresetThumbnails() {
+        guard let source = thumbnailSource else { return }
+        let presets = presets
+        let luts = luts
+        let renderer = renderer
+        Task {
+            let rendered = await Task.detached(priority: .utility) { () -> [UUID: CGImage] in
+                var result: [UUID: CGImage] = [:]
+                for preset in presets {
+                    let lut = luts.first { $0.id == preset.edit.lutID }
+                    result[preset.id] = renderer.cgImage(FilterPipeline.apply(preset.edit, lut: lut, to: source))
+                }
+                return result
+            }.value
+            guard source === thumbnailSource else { return }
+            presetThumbnails = rendered
+        }
+    }
+
     func resetAdjustments() {
         edit = edit.withoutAdjustments()
     }
@@ -249,6 +310,7 @@ final class EditorModel {
     }
 
     private func makeThumbnails() {
+        makePresetThumbnails()
         guard let source = thumbnailSource, !luts.isEmpty else { return }
         let luts = luts
         let renderer = renderer

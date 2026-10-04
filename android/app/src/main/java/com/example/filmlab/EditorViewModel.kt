@@ -35,6 +35,10 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var leakThumbnails by mutableStateOf<Map<Int, ImageBitmap>>(emptyMap())
         private set
+    var presets by mutableStateOf(PresetStore.load(application))
+        private set
+    var presetThumbnails by mutableStateOf<Map<String, ImageBitmap>>(emptyMap())
+        private set
     /** While true the preview shows the whole straightened photo so the crop box can be edited. */
     var isCropping by mutableStateOf(false)
         private set
@@ -188,6 +192,51 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resetCrop() = update(edit.copy(crop = CropState()))
 
+    // Presets
+
+    /** The current edit without its crop, which is what a preset holds. */
+    private val look get() = edit.copy(crop = CropState())
+
+    fun isApplied(preset: Preset) = preset.edit == look
+
+    fun savePreset(name: String) {
+        val trimmed = name.trim().ifEmpty { "Preset ${presets.size + 1}" }
+        presets = presets + Preset(name = trimmed, edit = look)
+        presetsChanged()
+    }
+
+    fun applyPreset(preset: Preset) = update(preset.edit.copy(crop = edit.crop))
+
+    fun renamePreset(preset: Preset, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        presets = presets.map { if (it.id == preset.id) it.copy(name = trimmed) else it }
+        presetsChanged()
+    }
+
+    fun deletePreset(preset: Preset) {
+        presets = presets.filter { it.id != preset.id }
+        presetsChanged()
+    }
+
+    private fun presetsChanged() {
+        val presets = presets
+        val context = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) { PresetStore.save(context, presets) }
+        makePresetThumbnails()
+    }
+
+    private fun makePresetThumbnails() {
+        val source = thumbnailSource ?: return
+        val presets = presets
+        viewModelScope.launch {
+            val rendered = presets.associate { preset ->
+                preset.id to Processor.apply(preset.edit, lutFor(preset.edit.lutId), source).asImageBitmap()
+            }
+            if (source === thumbnailSource) presetThumbnails = rendered
+        }
+    }
+
     fun load(uri: Uri) {
         viewModelScope.launch {
             isLoading = true
@@ -254,6 +303,7 @@ class EditorViewModel(application: Application) : AndroidViewModel(application) 
     private fun lutFor(id: String?) = luts.firstOrNull { it.id == id }
 
     private fun makeThumbnails() {
+        makePresetThumbnails()
         val source = thumbnailSource ?: return
         val luts = luts
         viewModelScope.launch {

@@ -41,6 +41,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -61,6 +62,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -243,6 +245,17 @@ private fun Controls(model: EditorViewModel) {
 @Composable
 private fun LooksPanel(model: EditorViewModel) {
     val edit = model.edit
+    var naming by remember { mutableStateOf<PresetNaming?>(null) }
+    naming?.let { current ->
+        PresetNameDialog(
+            title = if (current.preset == null) "Save Preset" else "Rename Preset",
+            initial = current.name,
+            onDismiss = { naming = null },
+        ) { name ->
+            naming = null
+            if (current.preset == null) model.savePreset(name) else model.renamePreset(current.preset, name)
+        }
+    }
     Column {
         if (edit.lutId != null) {
             LabeledSlider("Strength", edit.intensity, 0f..1f) { model.update(edit.copy(intensity = it)) }
@@ -256,6 +269,29 @@ private fun LooksPanel(model: EditorViewModel) {
                     model.update(edit.copy(lutId = null, intensity = 1f))
                 }
             }
+            item { NewPresetTile { naming = PresetNaming(null, "") } }
+            items(model.presets, key = { it.id }) { preset ->
+                var menuOpen by remember { mutableStateOf(false) }
+                Box {
+                    LookTile(
+                        preset.name, model.presetThumbnails[preset.id], model.isApplied(preset),
+                        onLongClick = { menuOpen = true },
+                    ) { model.applyPreset(preset) }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(text = { Text("Rename") }, onClick = {
+                            menuOpen = false
+                            naming = PresetNaming(preset, preset.name)
+                        })
+                        DropdownMenuItem(text = { Text("Delete") }, onClick = {
+                            menuOpen = false
+                            model.deletePreset(preset)
+                        })
+                    }
+                }
+            }
+            item {
+                Box(Modifier.padding(top = 6.dp).size(1.dp, 56.dp).background(Color(0xFF404040)))
+            }
             items(model.luts, key = { it.id }) { lut ->
                 LookTile(lut.name, model.thumbnails[lut.id], edit.lutId == lut.id) {
                     if (edit.lutId != lut.id) model.update(edit.copy(lutId = lut.id, intensity = 1f))
@@ -265,11 +301,69 @@ private fun LooksPanel(model: EditorViewModel) {
     }
 }
 
+/** Which preset is being named: null for a new one. */
+private data class PresetNaming(val preset: Preset?, val name: String)
+
 @Composable
-private fun LookTile(name: String, thumbnail: ImageBitmap?, selected: Boolean, onClick: () -> Unit) {
+private fun PresetNameDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var name by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("Name") })
+                Spacer(Modifier.height(8.dp))
+                Text("Saves the look, adjustments and effects. Crop isn't included.", fontSize = 12.sp, color = Color.Gray)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(name) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun NewPresetTile(onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
+        Canvas(Modifier.size(68.dp)) {
+            drawRoundRect(
+                color = Color(0xFF666666),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx()),
+                style = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 9f))),
+            )
+            val c = center
+            val arm = 9.dp.toPx()
+            drawLine(Color.Gray, Offset(c.x - arm, c.y), Offset(c.x + arm, c.y), strokeWidth = 2.dp.toPx())
+            drawLine(Color.Gray, Offset(c.x, c.y - arm), Offset(c.x, c.y + arm), strokeWidth = 2.dp.toPx())
+        }
+        Spacer(Modifier.height(6.dp))
+        Text("New", fontSize = 11.sp, color = Color.Gray)
+    }
+}
+
+@Composable
+private fun LookTile(
+    name: String,
+    thumbnail: ImageBitmap?,
+    selected: Boolean,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentOnLongClick by rememberUpdatedState(onLongClick)
+    val press = if (onLongClick == null) {
+        Modifier.clickable(onClick = onClick)
+    } else {
+        Modifier.pointerInput(Unit) {
+            detectTapGestures(
+                onTap = { currentOnClick() },
+                onLongPress = { currentOnLongClick?.invoke() },
+            )
+        }
+    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = press,
     ) {
         val shape = RoundedCornerShape(6.dp)
         val tile = Modifier

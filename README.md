@@ -20,6 +20,9 @@ or push a tag such as `v0.2.0`.
 ## Features
 
 - Pick a photo, then tap a **look** (a 3D LUT) and set its strength.
+- **My presets**: tap **New** in the Looks strip to save the current look, strength, adjustments and light
+  leak under a name (crop is left out, since it belongs to each photo). Saved presets sit next to **New**,
+  previewed on the open photo; tap one to apply it (undoable). Long-press to rename or delete.
 - **Adjust**: exposure, contrast, saturation, warmth, fade, vignette, grain.
 - **Effects**: five light leaks (Amber, Rose, Sunset, Haze, Prism) with an amount slider. **Shift** moves the
   leak to another corner. The leaks are drawn by code from soft coloured glows, so there are no image files
@@ -79,6 +82,7 @@ first. Create a key once with `keytool -genkeypair -keystore filmlab.keystore -a
 | `LightLeak.swift` | Light leak styles and how they are drawn. |
 | `History.swift` | Undo and redo. |
 | `EditStore.swift` | Saves each photo's edits as JSON in Application Support. |
+| `PresetStore.swift` | Saves your presets as JSON in Application Support. |
 
 ## Android code
 
@@ -95,6 +99,7 @@ In `android/app/src/main/java/com/example/filmlab/`:
 | `LightLeak.kt` | Light leak styles (drawn in `Processor.kt`). |
 | `History.kt` | Undo and redo. |
 | `EditStore.kt` | Saves each photo's edits as JSON in the app's files. |
+| `PresetStore.kt` | Saves your presets as JSON in the app's files. |
 
 Crop arithmetic and the light leak styles are written twice, once per platform; keep them in step.
 
